@@ -113,7 +113,10 @@ def click_close_button(page):
             frame.get_by_text("Close", exact=True),
             frame.locator("text=/^close$/i"),
             frame.locator("button:has-text('Close')"),
-            frame.locator("[role='button']:has-text('Close')")
+            frame.locator("[role='button']:has-text('Close')"),
+            frame.locator("[aria-label*='close' i]"),
+            frame.locator(".close-btn, .closeButton, .btn-close"),
+            frame.locator("text='×'")
         ]
         for loc in locators:
             try:
@@ -121,23 +124,31 @@ def click_close_button(page):
                 for i in range(count):
                     element = loc.nth(i)
                     if element.is_visible():
-                        box = element.bounding_box()
-                        if box:
-                            page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-                            page.wait_for_timeout(1000)
-                            return True
+                        element.click(force=True)
+                        page.wait_for_timeout(1000)
+                        return True
             except Exception:
                 pass
     return False
 
 
 def click_ok_button(page):
-    page.wait_for_timeout(1500)
+    page.wait_for_timeout(2000)
+    
+    # Try pressing Enter first to dismiss reward modals
+    try:
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(500)
+    except Exception:
+        pass
+
     for frame in page.frames:
         locators = [
             frame.get_by_role("button", name="OK"),
             frame.get_by_text("OK", exact=True),
-            frame.locator("text=/^ok$/i")
+            frame.locator("text=/^ok$/i"),
+            frame.locator("button:has-text('OK')"),
+            frame.locator("div[role='dialog'] button")
         ]
         for loc in locators:
             try:
@@ -274,7 +285,6 @@ def run_all_accounts():
     with sync_playwright() as p:
         print(f"Total Accounts Loaded: {len(ACCOUNTS)}")
         
-        # HEADLESS LAUNCH FOR CLOUD
         browser = p.chromium.launch(
             headless=True,
             args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
@@ -291,7 +301,8 @@ def run_all_accounts():
             account = active_batch[current_idx]
             print(f"\n[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {account['email']}")
 
-            context = browser.new_context(no_viewport=True)
+            # Set explicit 1080p desktop viewport for cloud headless mode
+            context = browser.new_context(viewport={"width": 1920, "height": 1080})
             page = context.new_page()
 
             try:
@@ -324,4 +335,4 @@ def run_all_accounts():
 
 if __name__ == "__main__":
     run_all_accounts()
-  
+    
