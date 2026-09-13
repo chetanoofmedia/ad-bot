@@ -28,4 +28,5 @@ jobs:
           playwright install --with-deps chromium
 
       - name: Run Script
-        run: python bot.py
+        run: python -u bot.py
+
