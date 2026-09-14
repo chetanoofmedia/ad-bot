@@ -3,7 +3,7 @@ name: Run Daily Ad Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '5 16 * * *' # Auto-runs daily at 9:35 PM IST (16:05 UTC)
 
 jobs:
   run-automation:
