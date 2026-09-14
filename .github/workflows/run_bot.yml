@@ -28,5 +28,7 @@ jobs:
           playwright install --with-deps chromium
 
       - name: Run Script
+        env:
+          ALL_EMAILS: ${{ secrets.ALL_EMAILS }}
+          ACCOUNT_PASSWORD: ${{ secrets.ACCOUNT_PASSWORD }}
         run: python -u bot.py
-
