@@ -1,54 +1,19 @@
+import os
 import time
 from playwright.sync_api import sync_playwright
 
 # ============================================================
-# UPDATED ACCOUNTS LIST (41 ACCOUNTS)
+# LOAD 41 CREDENTIALS FROM GITHUB SECRETS
 # ============================================================
-ALL_EMAILS = [
-    "5l8e6h4km7@ooynib.com",
-    "2cv9ccpsxr@lnovic.com",
-    "cisywyri@denipl.net",
-    "er6jf77d70@ooynib.com",
-    "facofa@denipl.com",
-    "gasemu@denipl.com",
-    "golihyti@forexzig.com",
-    "hozylyji@denipl.com",
-    "jesafago@forexzig.com",
-    "jolopam942@hebase.com",
-    "kufywexe@denipl.net",
-    "kuvyxa@forexzig.com",
-    "liluloxe@denipl.net",
-    "lizisu@fxzig.com",
-    "lojyfoxy@forexzig.com",
-    "maweqo@denipl.net",
-    "naqiki@forexzig.com",
-    "nbpqax7rlr@lnovic.com",
-    "nysesu@fxzig.com",
-    "pokuky@denipl.com",
-    "punamo@denipl.com",
-    "qob00mzui7@yzcalo.com",
-    "qe1zvivj3q@lnovic.com",
-    "qyrijida@denipl.com",
-    "raluxyqa@fxzig.com",
-    "rexoxyza@fxzig.com",
-    "rixakibo@forexzig.com",
-    "rorehyzi@forexzig.com",
-    "rotehavu@denipl.net",
-    "rovofama@fxzig.com",
-    "saxoc96700@hilostar.com",
-    "sikexyli@denipl.net",
-    "tuxaxalu@denipl.com",
-    "venafolu@forexzig.com",
-    "wasose@forexzig.com",
-    "wukocavo@denipl.net",
-    "wylesyro@fxzig.com",
-    "xagymyho@denipl.net",
-    "xehawefe@fxzig.com",
-    "xokevufy@fxzig.com",
-    "xylexu@forexzig.com",
-]
+raw_emails = os.environ.get("ALL_EMAILS", "")
+email_password = os.environ.get("ACCOUNT_PASSWORD", "")
 
-ACCOUNTS = [{"email": email, "password": "Chetan@2026"} for email in ALL_EMAILS]
+ALL_EMAILS = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip()]
+
+if not ALL_EMAILS:
+    raise ValueError("ERROR: No emails found in 'ALL_EMAILS' secret! Check GitHub Secrets configuration.")
+
+ACCOUNTS = [{"email": email, "password": email_password} for email in ALL_EMAILS]
 TARGET_BATCH_SIZE = 5
 
 
@@ -82,7 +47,7 @@ def purge_popups(page):
                     }
                 }
             });
-            const overlays = document.querySelectorAll('[class*="backdrop"], [class*="overlay"], div[role="dialog"]');
+            const overlays = document.querySelectorAll('[class*="backdrop"], [class*="overlay"]');
             overlays.forEach(o => o.remove());
         }""")
     except Exception:
@@ -102,9 +67,48 @@ def check_daily_limit_reached(page):
 
 
 def click_close_button(page):
+    page.wait_for_timeout(2500)
+    
+    for _ in range(2):
+        try:
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(400)
+        except Exception:
+            pass
+
     try:
-        page.keyboard.press("Escape")
-        page.wait_for_timeout(500)
+        closed = page.evaluate("""() => {
+            function findAndClick(doc) {
+                const elements = Array.from(doc.querySelectorAll('button, div, span, a, svg, i'));
+                for (let el of elements) {
+                    const txt = el.textContent ? el.textContent.trim().toLowerCase() : '';
+                    const aria = el.getAttribute('aria-label') ? el.getAttribute('aria-label').toLowerCase() : '';
+                    const cls = el.className && typeof el.className === 'string' ? el.className.toLowerCase() : '';
+
+                    const isClose = txt === 'close' || txt === '×' || txt === 'x' || txt === 'skip' || 
+                                    aria.includes('close') || cls.includes('close') || cls.includes('skip');
+
+                    if (isClose && el.offsetWidth > 0 && el.offsetHeight > 0) {
+                        el.click();
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            if (findAndClick(document)) return true;
+
+            const iframes = document.querySelectorAll('iframe');
+            for (let f of iframes) {
+                try {
+                    if (f.contentDocument && findAndClick(f.contentDocument)) return true;
+                } catch(e) {}
+            }
+            return false;
+        }""")
+        if closed:
+            page.wait_for_timeout(1000)
+            return True
     except Exception:
         pass
 
@@ -115,8 +119,9 @@ def click_close_button(page):
             frame.locator("button:has-text('Close')"),
             frame.locator("[role='button']:has-text('Close')"),
             frame.locator("[aria-label*='close' i]"),
-            frame.locator(".close-btn, .closeButton, .btn-close"),
-            frame.locator("text='×'")
+            frame.locator(".close-btn, .closeButton, .btn-close, .skip-button, .reward-close"),
+            frame.locator("text='×'"),
+            frame.locator("text='X'")
         ]
         for loc in locators:
             try:
@@ -129,16 +134,46 @@ def click_close_button(page):
                         return True
             except Exception:
                 pass
+
     return False
 
 
 def click_ok_button(page):
-    page.wait_for_timeout(2000)
+    page.wait_for_timeout(2500)
     
-    # Try pressing Enter first to dismiss reward modals
     try:
         page.keyboard.press("Enter")
         page.wait_for_timeout(500)
+    except Exception:
+        pass
+
+    try:
+        ok_clicked = page.evaluate("""() => {
+            function findOK(doc) {
+                const buttons = Array.from(doc.querySelectorAll('button, div[role="button"], a, span'));
+                for (let btn of buttons) {
+                    const txt = btn.textContent ? btn.textContent.trim().toLowerCase() : '';
+                    if ((txt === 'ok' || txt === 'claim' || txt === 'confirm' || txt === 'got it') && btn.offsetWidth > 0 && btn.offsetHeight > 0) {
+                        btn.click();
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            if (findOK(document)) return true;
+
+            const iframes = document.querySelectorAll('iframe');
+            for (let f of iframes) {
+                try {
+                    if (f.contentDocument && findOK(f.contentDocument)) return true;
+                } catch(e) {}
+            }
+            return false;
+        }""")
+        if ok_clicked:
+            page.wait_for_timeout(1000)
+            return True
     except Exception:
         pass
 
@@ -160,6 +195,7 @@ def click_ok_button(page):
                         return True
             except Exception:
                 pass
+
     return False
 
 
@@ -252,8 +288,8 @@ def process_single_account(page, account):
         print(f"[{email}] LIMIT DETECTED: 'You have used all your ad watch opportunities for today.'")
         return "LIMIT_REACHED"
 
-    print(f"[{email}] Watching video ad (32s)...")
-    time.sleep(32)
+    print(f"[{email}] Watching video ad (35s)...")
+    time.sleep(35)
 
     print(f"[{email}] Closing ad player...")
     if click_close_button(page):
@@ -287,7 +323,12 @@ def run_all_accounts():
         
         browser = p.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled"
+            ]
         )
 
         while active_batch:
@@ -301,8 +342,10 @@ def run_all_accounts():
             account = active_batch[current_idx]
             print(f"\n[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {account['email']}")
 
-            # Set explicit 1080p desktop viewport for cloud headless mode
-            context = browser.new_context(viewport={"width": 1920, "height": 1080})
+            context = browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            )
             page = context.new_page()
 
             try:
@@ -335,4 +378,3 @@ def run_all_accounts():
 
 if __name__ == "__main__":
     run_all_accounts()
-    
