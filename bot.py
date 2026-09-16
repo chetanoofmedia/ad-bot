@@ -3,7 +3,7 @@ import time
 from playwright.sync_api import sync_playwright
 
 # ============================================================
-# LOAD 41 CREDENTIALS FROM GITHUB SECRETS
+# LOAD CREDENTIALS SECURELY FROM GITHUB SECRETS
 # ============================================================
 raw_emails = os.environ.get("ALL_EMAILS", "")
 email_password = os.environ.get("ACCOUNT_PASSWORD", "")
@@ -11,7 +11,7 @@ email_password = os.environ.get("ACCOUNT_PASSWORD", "")
 ALL_EMAILS = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip()]
 
 if not ALL_EMAILS:
-    raise ValueError("ERROR: No emails found in 'ALL_EMAILS' secret! Check GitHub Secrets configuration.")
+    raise ValueError("ERROR: No emails found in 'ALL_EMAILS' secret! Please configure GitHub Secrets.")
 
 ACCOUNTS = [{"email": email, "password": email_password} for email in ALL_EMAILS]
 TARGET_BATCH_SIZE = 5
@@ -292,7 +292,8 @@ def process_single_account(page, account):
     time.sleep(35)
 
     print(f"[{email}] Closing ad player...")
-    if click_close_button(page):
+    ad_closed = click_close_button(page)
+    if ad_closed:
         print(f"[{email}] Ad closed successfully.")
     else:
         print(f"[{email}] Warning: Close button click failed.")
@@ -300,17 +301,19 @@ def process_single_account(page, account):
     page.wait_for_timeout(2000)
 
     print(f"[{email}] Claiming reward...")
-    if click_ok_button(page):
+    ok_clicked = click_ok_button(page)
+    if ok_clicked:
         print(f"[{email}] SUCCESS: Reward claimed!")
+        return "SUCCESS"
     else:
         print(f"[{email}] Warning: OK button not found.")
-
-    return "SUCCESS"
+        return "NO_OK_BUTTON"
 
 
 def run_all_accounts():
     remaining_pool = list(ACCOUNTS)
     active_batch = []
+    account_stats = {}
 
     while remaining_pool and len(active_batch) < TARGET_BATCH_SIZE:
         active_batch.append(remaining_pool.pop(0))
@@ -340,7 +343,14 @@ def run_all_accounts():
                 print("=" * 60)
 
             account = active_batch[current_idx]
-            print(f"\n[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {account['email']}")
+            email = account["email"]
+
+            if email not in account_stats:
+                account_stats[email] = {"total_runs": 0, "no_ok_count": 0}
+
+            account_stats[email]["total_runs"] += 1
+
+            print(f"\n[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {email} (Run #{account_stats[email]['total_runs']})")
 
             context = browser.new_context(
                 viewport={"width": 1920, "height": 1080},
@@ -351,15 +361,27 @@ def run_all_accounts():
             try:
                 status = process_single_account(page, account)
             except Exception as e:
-                print(f"Error executing {account['email']}: {e}")
+                print(f"Error executing {email}: {e}")
                 status = "ERROR"
 
             context.close()
 
-            if status == "LIMIT_REACHED":
-                print(f"--> [REMOVING ACCOUNT] {account['email']} reached limit. Dropping from active batch.")
-                active_batch.pop(current_idx)
+            if status == "NO_OK_BUTTON":
+                account_stats[email]["no_ok_count"] += 1
 
+            should_remove = False
+            if status == "LIMIT_REACHED":
+                print(f"--> [REMOVING] {email} hit daily limit text alert.")
+                should_remove = True
+            elif account_stats[email]["no_ok_count"] >= 2:
+                print(f"--> [REMOVING] {email} missed OK button twice in a row (Limit likely reached quietly).")
+                should_remove = True
+            elif account_stats[email]["total_runs"] >= 11:
+                print(f"--> [REMOVING] {email} reached maximum 11 attempt safety cap.")
+                should_remove = True
+
+            if should_remove:
+                active_batch.pop(current_idx)
                 if remaining_pool:
                     new_acc = remaining_pool.pop(0)
                     print(f"--> [ADDING NEW ACCOUNT] Pulled {new_acc['email']} into slot {current_idx + 1}.")
@@ -371,7 +393,7 @@ def run_all_accounts():
                 time.sleep(1)
 
         print("\n" + "=" * 60)
-        print("ALL 41 ACCOUNTS HAVE REACHED THEIR DAILY AD LIMIT FOR TODAY!")
+        print("ALL ACCOUNTS PROCESSED AND EXHAUSTED FOR TODAY!")
         print("=" * 60)
         browser.close()
 
