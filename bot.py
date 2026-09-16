@@ -67,7 +67,6 @@ def check_daily_limit_reached(page):
 
 
 def check_login_error(page):
-    """Detects invalid emails, bad passwords, or registration errors on the login modal."""
     error_phrases = [
         "Email does not exist!",
         "Incorrect password",
@@ -157,62 +156,67 @@ def click_close_button(page):
 
 
 def click_ok_button(page):
-    page.wait_for_timeout(2500)
-    
-    try:
-        page.keyboard.press("Enter")
-        page.wait_for_timeout(500)
-    except Exception:
-        pass
+    # Poll for up to 6 seconds to account for network/rendering lag
+    start_time = time.time()
+    while time.time() - start_time < 6:
+        try:
+            page.keyboard.press("Enter")
+            page.wait_for_timeout(300)
+        except Exception:
+            pass
 
-    try:
-        ok_clicked = page.evaluate("""() => {
-            function findOK(doc) {
-                const buttons = Array.from(doc.querySelectorAll('button, div[role="button"], a, span'));
-                for (let btn of buttons) {
-                    const txt = btn.textContent ? btn.textContent.trim().toLowerCase() : '';
-                    if ((txt === 'ok' || txt === 'claim' || txt === 'confirm' || txt === 'got it') && btn.offsetWidth > 0 && btn.offsetHeight > 0) {
-                        btn.click();
-                        return true;
+        try:
+            ok_clicked = page.evaluate("""() => {
+                function findOK(doc) {
+                    const buttons = Array.from(doc.querySelectorAll('button, div[role="button"], a, span, p'));
+                    for (let btn of buttons) {
+                        const txt = btn.textContent ? btn.textContent.trim().toLowerCase() : '';
+                        if (['ok', 'claim', 'confirm', 'got it', 'done', 'continue'].includes(txt) && btn.offsetWidth > 0 && btn.offsetHeight > 0) {
+                            btn.click();
+                            return true;
+                        }
                     }
+                    return false;
+                }
+
+                if (findOK(document)) return true;
+
+                const iframes = document.querySelectorAll('iframe');
+                for (let f of iframes) {
+                    try {
+                        if (f.contentDocument && findOK(f.contentDocument)) return true;
+                    } catch(e) {}
                 }
                 return false;
-            }
+            }""")
+            if ok_clicked:
+                page.wait_for_timeout(1000)
+                return True
+        except Exception:
+            pass
 
-            if (findOK(document)) return true;
+        for frame in page.frames:
+            locators = [
+                frame.get_by_role("button", name="OK"),
+                frame.get_by_text("OK", exact=True),
+                frame.locator("text=/^ok$/i"),
+                frame.locator("button:has-text('OK')"),
+                frame.locator("div[role='dialog'] button"),
+                frame.locator("button:has-text('Claim')")
+            ]
+            for loc in locators:
+                try:
+                    count = loc.count()
+                    for i in range(count):
+                        element = loc.nth(i)
+                        if element.is_visible():
+                            element.click(force=True)
+                            page.wait_for_timeout(1000)
+                            return True
+                except Exception:
+                    pass
 
-            const iframes = document.querySelectorAll('iframe');
-            for (let f of iframes) {
-                try {
-                    if (f.contentDocument && findOK(f.contentDocument)) return true;
-                } catch(e) {}
-            }
-            return false;
-        }""")
-        if ok_clicked:
-            page.wait_for_timeout(1000)
-            return True
-    except Exception:
-        pass
-
-    for frame in page.frames:
-        locators = [
-            frame.get_by_role("button", name="OK"),
-            frame.get_by_text("OK", exact=True),
-            frame.locator("text=/^ok$/i"),
-            frame.locator("button:has-text('OK')"),
-            frame.locator("div[role='dialog'] button")
-        ]
-        for loc in locators:
-            try:
-                count = loc.count()
-                for i in range(count):
-                    element = loc.nth(i)
-                    if element.is_visible():
-                        element.click(force=True)
-                        return True
-            except Exception:
-                pass
+        time.sleep(1)
 
     return False
 
@@ -282,7 +286,6 @@ def process_single_account(page, account):
     page.get_by_role("button", name="Log in").last.click()
     page.wait_for_timeout(2500)
 
-    # Validate login status
     login_err = check_login_error(page)
     if login_err:
         print(f"[{email}] LOGIN ERROR: '{login_err}'. Skipping account permanently.")
@@ -402,8 +405,8 @@ def run_all_accounts():
             elif status == "LIMIT_REACHED":
                 print(f"--> [REMOVING] {email} hit daily limit text alert.")
                 should_remove = True
-            elif account_stats[email]["no_ok_count"] >= 2:
-                print(f"--> [REMOVING] {email} missed OK button twice in a row (Limit likely reached quietly).")
+            elif account_stats[email]["no_ok_count"] >= 4:
+                print(f"--> [REMOVING] {email} missed OK button 4 times in a row. Dropping account.")
                 should_remove = True
             elif account_stats[email]["total_runs"] >= 11:
                 print(f"--> [REMOVING] {email} reached maximum 11 attempt safety cap.")
