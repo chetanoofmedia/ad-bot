@@ -66,6 +66,24 @@ def check_daily_limit_reached(page):
     return False
 
 
+def check_login_error(page):
+    """Detects invalid emails, bad passwords, or registration errors on the login modal."""
+    error_phrases = [
+        "Email does not exist!",
+        "Incorrect password",
+        "Invalid email",
+        "User not found"
+    ]
+    try:
+        for phrase in error_phrases:
+            elem = page.get_by_text(phrase, exact=False)
+            if elem.count() > 0 and elem.first.is_visible():
+                return phrase
+    except Exception:
+        pass
+    return None
+
+
 def click_close_button(page):
     page.wait_for_timeout(2500)
     
@@ -262,7 +280,15 @@ def process_single_account(page, account):
     page.fill("input[placeholder='Enter your email address']", email)
     page.fill("input[placeholder='Enter your Password']", password)
     page.get_by_role("button", name="Log in").last.click()
-    page.wait_for_timeout(4000)
+    page.wait_for_timeout(2500)
+
+    # Validate login status
+    login_err = check_login_error(page)
+    if login_err:
+        print(f"[{email}] LOGIN ERROR: '{login_err}'. Skipping account permanently.")
+        return "INVALID_ACCOUNT"
+
+    page.wait_for_timeout(1500)
 
     print(f"[{email}] Navigating to Earn Credits page...")
     page.goto("https://easemate.ai/earn-credits", wait_until="load")
@@ -370,7 +396,10 @@ def run_all_accounts():
                 account_stats[email]["no_ok_count"] += 1
 
             should_remove = False
-            if status == "LIMIT_REACHED":
+            if status == "INVALID_ACCOUNT":
+                print(f"--> [REMOVING INVALID EMAIL] {email} does not exist. Permanently dropping from batch.")
+                should_remove = True
+            elif status == "LIMIT_REACHED":
                 print(f"--> [REMOVING] {email} hit daily limit text alert.")
                 should_remove = True
             elif account_stats[email]["no_ok_count"] >= 2:
