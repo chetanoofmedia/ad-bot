@@ -32,3 +32,11 @@ jobs:
           ALL_EMAILS: ${{ secrets.ALL_EMAILS }}
           ACCOUNT_PASSWORD: ${{ secrets.ACCOUNT_PASSWORD }}
         run: python -u bot.py
+
+      - name: Upload Execution Videos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot-recorded-videos
+          path: videos/
+          retention-days: 3
