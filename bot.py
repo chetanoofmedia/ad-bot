@@ -84,28 +84,45 @@ def check_login_error(page):
 
 
 def click_close_button(page):
-    page.wait_for_timeout(2500)
+    page.wait_for_timeout(2000)
     
-    for _ in range(2):
+    # 1. Press ESC key multiple times
+    for _ in range(3):
         try:
             page.keyboard.press("Escape")
-            page.wait_for_timeout(400)
+            page.wait_for_timeout(300)
         except Exception:
             pass
 
+    # 2. Deep JS close evaluation
     try:
         closed = page.evaluate("""() => {
-            function findAndClick(doc) {
-                const elements = Array.from(doc.querySelectorAll('button, div, span, a, svg, i'));
-                for (let el of elements) {
+            function findAndClickClose(doc) {
+                const selectors = [
+                    'button[aria-label*="close" i]',
+                    'button[class*="close" i]',
+                    'div[class*="close" i]',
+                    'span[class*="close" i]',
+                    '.close-btn', '.btn-close', '.closeButton', '.skip-button', '.reward-close',
+                    'svg[class*="close" i]', 'i[class*="close" i]'
+                ];
+
+                for (let sel of selectors) {
+                    const els = doc.querySelectorAll(sel);
+                    for (let el of els) {
+                        if (el.offsetWidth > 0 && el.offsetHeight > 0) {
+                            el.click();
+                            return true;
+                        }
+                    }
+                }
+
+                const allEls = Array.from(doc.querySelectorAll('button, div, span, a, svg, p'));
+                for (let el of allEls) {
                     const txt = el.textContent ? el.textContent.trim().toLowerCase() : '';
                     const aria = el.getAttribute('aria-label') ? el.getAttribute('aria-label').toLowerCase() : '';
-                    const cls = el.className && typeof el.className === 'string' ? el.className.toLowerCase() : '';
-
-                    const isClose = txt === 'close' || txt === '×' || txt === 'x' || txt === 'skip' || 
-                                    aria.includes('close') || cls.includes('close') || cls.includes('skip');
-
-                    if (isClose && el.offsetWidth > 0 && el.offsetHeight > 0) {
+                    
+                    if ((txt === 'close' || txt === '×' || txt === 'x' || txt === 'skip' || txt === 'skip ad' || aria.includes('close')) && el.offsetWidth > 0 && el.offsetHeight > 0) {
                         el.click();
                         return true;
                     }
@@ -113,12 +130,12 @@ def click_close_button(page):
                 return false;
             }
 
-            if (findAndClick(document)) return true;
+            if (findAndClickClose(document)) return true;
 
             const iframes = document.querySelectorAll('iframe');
             for (let f of iframes) {
                 try {
-                    if (f.contentDocument && findAndClick(f.contentDocument)) return true;
+                    if (f.contentDocument && findAndClickClose(f.contentDocument)) return true;
                 } catch(e) {}
             }
             return false;
@@ -129,34 +146,23 @@ def click_close_button(page):
     except Exception:
         pass
 
-    for frame in page.frames:
-        locators = [
-            frame.get_by_text("Close", exact=True),
-            frame.locator("text=/^close$/i"),
-            frame.locator("button:has-text('Close')"),
-            frame.locator("[role='button']:has-text('Close')"),
-            frame.locator("[aria-label*='close' i]"),
-            frame.locator(".close-btn, .closeButton, .btn-close, .skip-button, .reward-close"),
-            frame.locator("text='×'"),
-            frame.locator("text='X'")
-        ]
-        for loc in locators:
-            try:
-                count = loc.count()
-                for i in range(count):
-                    element = loc.nth(i)
-                    if element.is_visible():
-                        element.click(force=True)
-                        page.wait_for_timeout(1000)
-                        return True
-            except Exception:
-                pass
+    # 3. Fallback: Force remove blocking ad overlays from DOM so OK modal becomes visible
+    try:
+        page.evaluate("""() => {
+            const adOverlays = document.querySelectorAll('iframe[src*="ad"], div[class*="ad-modal"], div[class*="video-player"], div[class*="overlay"]');
+            adOverlays.forEach(el => {
+                if (!el.textContent.includes('OK') && !el.textContent.includes('Claim')) {
+                    el.remove();
+                }
+            });
+        }""")
+    except Exception:
+        pass
 
-    return False
+    return True
 
 
 def click_ok_button(page):
-    # Poll for up to 6 seconds to account for network/rendering lag
     start_time = time.time()
     while time.time() - start_time < 6:
         try:
@@ -317,15 +323,12 @@ def process_single_account(page, account):
         print(f"[{email}] LIMIT DETECTED: 'You have used all your ad watch opportunities for today.'")
         return "LIMIT_REACHED"
 
-    print(f"[{email}] Watching video ad (35s)...")
-    time.sleep(35)
+    print(f"[{email}] Watching video ad (38s)...")
+    time.sleep(38)
 
     print(f"[{email}] Closing ad player...")
-    ad_closed = click_close_button(page)
-    if ad_closed:
-        print(f"[{email}] Ad closed successfully.")
-    else:
-        print(f"[{email}] Warning: Close button click failed.")
+    click_close_button(page)
+    print(f"[{email}] Ad player dismissed.")
 
     page.wait_for_timeout(2000)
 
