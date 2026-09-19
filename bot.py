@@ -3,7 +3,7 @@ import time
 from playwright.sync_api import sync_playwright
 
 # ============================================================
-# LOAD CREDENTIALS SECURELY FROM GITHUB SECRETS
+# LOAD 41 CREDENTIALS FROM GITHUB SECRETS
 # ============================================================
 raw_emails = os.environ.get("ALL_EMAILS", "")
 email_password = os.environ.get("ACCOUNT_PASSWORD", "")
@@ -11,7 +11,7 @@ email_password = os.environ.get("ACCOUNT_PASSWORD", "")
 ALL_EMAILS = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip()]
 
 if not ALL_EMAILS:
-    raise ValueError("ERROR: No emails found in 'ALL_EMAILS' secret! Please configure GitHub Secrets.")
+    raise ValueError("ERROR: No emails found in 'ALL_EMAILS' secret! Check GitHub Secrets configuration.")
 
 ACCOUNTS = [{"email": email, "password": email_password} for email in ALL_EMAILS]
 TARGET_BATCH_SIZE = 5
@@ -66,63 +66,29 @@ def check_daily_limit_reached(page):
     return False
 
 
-def check_login_error(page):
-    error_phrases = [
-        "Email does not exist!",
-        "Incorrect password",
-        "Invalid email",
-        "User not found"
-    ]
-    try:
-        for phrase in error_phrases:
-            elem = page.get_by_text(phrase, exact=False)
-            if elem.count() > 0 and elem.first.is_visible():
-                return phrase
-    except Exception:
-        pass
-    return None
-
-
 def click_close_button(page):
-    page.wait_for_timeout(2000)
+    page.wait_for_timeout(2500)
     
-    # 1. Press ESC key multiple times
-    for _ in range(3):
+    for _ in range(2):
         try:
             page.keyboard.press("Escape")
-            page.wait_for_timeout(300)
+            page.wait_for_timeout(400)
         except Exception:
             pass
 
-    # 2. Deep JS close evaluation
     try:
         closed = page.evaluate("""() => {
-            function findAndClickClose(doc) {
-                const selectors = [
-                    'button[aria-label*="close" i]',
-                    'button[class*="close" i]',
-                    'div[class*="close" i]',
-                    'span[class*="close" i]',
-                    '.close-btn', '.btn-close', '.closeButton', '.skip-button', '.reward-close',
-                    'svg[class*="close" i]', 'i[class*="close" i]'
-                ];
-
-                for (let sel of selectors) {
-                    const els = doc.querySelectorAll(sel);
-                    for (let el of els) {
-                        if (el.offsetWidth > 0 && el.offsetHeight > 0) {
-                            el.click();
-                            return true;
-                        }
-                    }
-                }
-
-                const allEls = Array.from(doc.querySelectorAll('button, div, span, a, svg, p'));
-                for (let el of allEls) {
+            function findAndClick(doc) {
+                const elements = Array.from(doc.querySelectorAll('button, div, span, a, svg, i'));
+                for (let el of elements) {
                     const txt = el.textContent ? el.textContent.trim().toLowerCase() : '';
                     const aria = el.getAttribute('aria-label') ? el.getAttribute('aria-label').toLowerCase() : '';
-                    
-                    if ((txt === 'close' || txt === '×' || txt === 'x' || txt === 'skip' || txt === 'skip ad' || aria.includes('close')) && el.offsetWidth > 0 && el.offsetHeight > 0) {
+                    const cls = el.className && typeof el.className === 'string' ? el.className.toLowerCase() : '';
+
+                    const isClose = txt === 'close' || txt === '×' || txt === 'x' || txt === 'skip' || 
+                                    aria.includes('close') || cls.includes('close') || cls.includes('skip');
+
+                    if (isClose && el.offsetWidth > 0 && el.offsetHeight > 0) {
                         el.click();
                         return true;
                     }
@@ -130,12 +96,12 @@ def click_close_button(page):
                 return false;
             }
 
-            if (findAndClickClose(document)) return true;
+            if (findAndClick(document)) return true;
 
             const iframes = document.querySelectorAll('iframe');
             for (let f of iframes) {
                 try {
-                    if (f.contentDocument && findAndClickClose(f.contentDocument)) return true;
+                    if (f.contentDocument && findAndClick(f.contentDocument)) return true;
                 } catch(e) {}
             }
             return false;
@@ -146,83 +112,89 @@ def click_close_button(page):
     except Exception:
         pass
 
-    # 3. Fallback: Force remove blocking ad overlays from DOM so OK modal becomes visible
-    try:
-        page.evaluate("""() => {
-            const adOverlays = document.querySelectorAll('iframe[src*="ad"], div[class*="ad-modal"], div[class*="video-player"], div[class*="overlay"]');
-            adOverlays.forEach(el => {
-                if (!el.textContent.includes('OK') && !el.textContent.includes('Claim')) {
-                    el.remove();
-                }
-            });
-        }""")
-    except Exception:
-        pass
+    for frame in page.frames:
+        locators = [
+            frame.get_by_text("Close", exact=True),
+            frame.locator("text=/^close$/i"),
+            frame.locator("button:has-text('Close')"),
+            frame.locator("[role='button']:has-text('Close')"),
+            frame.locator("[aria-label*='close' i]"),
+            frame.locator(".close-btn, .closeButton, .btn-close, .skip-button, .reward-close"),
+            frame.locator("text='×'"),
+            frame.locator("text='X'")
+        ]
+        for loc in locators:
+            try:
+                count = loc.count()
+                for i in range(count):
+                    element = loc.nth(i)
+                    if element.is_visible():
+                        element.click(force=True)
+                        page.wait_for_timeout(1000)
+                        return True
+            except Exception:
+                pass
 
-    return True
+    return False
 
 
 def click_ok_button(page):
-    start_time = time.time()
-    while time.time() - start_time < 6:
-        try:
-            page.keyboard.press("Enter")
-            page.wait_for_timeout(300)
-        except Exception:
-            pass
+    page.wait_for_timeout(2500)
+    
+    try:
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(500)
+    except Exception:
+        pass
 
-        try:
-            ok_clicked = page.evaluate("""() => {
-                function findOK(doc) {
-                    const buttons = Array.from(doc.querySelectorAll('button, div[role="button"], a, span, p'));
-                    for (let btn of buttons) {
-                        const txt = btn.textContent ? btn.textContent.trim().toLowerCase() : '';
-                        if (['ok', 'claim', 'confirm', 'got it', 'done', 'continue'].includes(txt) && btn.offsetWidth > 0 && btn.offsetHeight > 0) {
-                            btn.click();
-                            return true;
-                        }
+    try:
+        ok_clicked = page.evaluate("""() => {
+            function findOK(doc) {
+                const buttons = Array.from(doc.querySelectorAll('button, div[role="button"], a, span'));
+                for (let btn of buttons) {
+                    const txt = btn.textContent ? btn.textContent.trim().toLowerCase() : '';
+                    if ((txt === 'ok' || txt === 'claim' || txt === 'confirm' || txt === 'got it') && btn.offsetWidth > 0 && btn.offsetHeight > 0) {
+                        btn.click();
+                        return true;
                     }
-                    return false;
-                }
-
-                if (findOK(document)) return true;
-
-                const iframes = document.querySelectorAll('iframe');
-                for (let f of iframes) {
-                    try {
-                        if (f.contentDocument && findOK(f.contentDocument)) return true;
-                    } catch(e) {}
                 }
                 return false;
-            }""")
-            if ok_clicked:
-                page.wait_for_timeout(1000)
-                return True
-        except Exception:
-            pass
+            }
 
-        for frame in page.frames:
-            locators = [
-                frame.get_by_role("button", name="OK"),
-                frame.get_by_text("OK", exact=True),
-                frame.locator("text=/^ok$/i"),
-                frame.locator("button:has-text('OK')"),
-                frame.locator("div[role='dialog'] button"),
-                frame.locator("button:has-text('Claim')")
-            ]
-            for loc in locators:
-                try:
-                    count = loc.count()
-                    for i in range(count):
-                        element = loc.nth(i)
-                        if element.is_visible():
-                            element.click(force=True)
-                            page.wait_for_timeout(1000)
-                            return True
-                except Exception:
-                    pass
+            if (findOK(document)) return true;
 
-        time.sleep(1)
+            const iframes = document.querySelectorAll('iframe');
+            for (let f of iframes) {
+                try {
+                    if (f.contentDocument && findOK(f.contentDocument)) return true;
+                } catch(e) {}
+            }
+            return false;
+        }""")
+        if ok_clicked:
+            page.wait_for_timeout(1000)
+            return True
+    except Exception:
+        pass
+
+    for frame in page.frames:
+        locators = [
+            frame.get_by_role("button", name="OK"),
+            frame.get_by_text("OK", exact=True),
+            frame.locator("text=/^ok$/i"),
+            frame.locator("button:has-text('OK')"),
+            frame.locator("div[role='dialog'] button")
+        ]
+        for loc in locators:
+            try:
+                count = loc.count()
+                for i in range(count):
+                    element = loc.nth(i)
+                    if element.is_visible():
+                        element.click(force=True)
+                        return True
+            except Exception:
+                pass
 
     return False
 
@@ -290,14 +262,7 @@ def process_single_account(page, account):
     page.fill("input[placeholder='Enter your email address']", email)
     page.fill("input[placeholder='Enter your Password']", password)
     page.get_by_role("button", name="Log in").last.click()
-    page.wait_for_timeout(2500)
-
-    login_err = check_login_error(page)
-    if login_err:
-        print(f"[{email}] LOGIN ERROR: '{login_err}'. Skipping account permanently.")
-        return "INVALID_ACCOUNT"
-
-    page.wait_for_timeout(1500)
+    page.wait_for_timeout(4000)
 
     print(f"[{email}] Navigating to Earn Credits page...")
     page.goto("https://easemate.ai/earn-credits", wait_until="load")
@@ -323,29 +288,29 @@ def process_single_account(page, account):
         print(f"[{email}] LIMIT DETECTED: 'You have used all your ad watch opportunities for today.'")
         return "LIMIT_REACHED"
 
-    print(f"[{email}] Watching video ad (38s)...")
-    time.sleep(38)
+    print(f"[{email}] Watching video ad (35s)...")
+    time.sleep(35)
 
     print(f"[{email}] Closing ad player...")
-    click_close_button(page)
-    print(f"[{email}] Ad player dismissed.")
+    if click_close_button(page):
+        print(f"[{email}] Ad closed successfully.")
+    else:
+        print(f"[{email}] Warning: Close button click failed.")
 
     page.wait_for_timeout(2000)
 
     print(f"[{email}] Claiming reward...")
-    ok_clicked = click_ok_button(page)
-    if ok_clicked:
+    if click_ok_button(page):
         print(f"[{email}] SUCCESS: Reward claimed!")
-        return "SUCCESS"
     else:
         print(f"[{email}] Warning: OK button not found.")
-        return "NO_OK_BUTTON"
+
+    return "SUCCESS"
 
 
 def run_all_accounts():
     remaining_pool = list(ACCOUNTS)
     active_batch = []
-    account_stats = {}
 
     while remaining_pool and len(active_batch) < TARGET_BATCH_SIZE:
         active_batch.append(remaining_pool.pop(0))
@@ -375,14 +340,7 @@ def run_all_accounts():
                 print("=" * 60)
 
             account = active_batch[current_idx]
-            email = account["email"]
-
-            if email not in account_stats:
-                account_stats[email] = {"total_runs": 0, "no_ok_count": 0}
-
-            account_stats[email]["total_runs"] += 1
-
-            print(f"\n[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {email} (Run #{account_stats[email]['total_runs']})")
+            print(f"\n[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {account['email']}")
 
             context = browser.new_context(
                 viewport={"width": 1920, "height": 1080},
@@ -393,30 +351,15 @@ def run_all_accounts():
             try:
                 status = process_single_account(page, account)
             except Exception as e:
-                print(f"Error executing {email}: {e}")
+                print(f"Error executing {account['email']}: {e}")
                 status = "ERROR"
 
             context.close()
 
-            if status == "NO_OK_BUTTON":
-                account_stats[email]["no_ok_count"] += 1
-
-            should_remove = False
-            if status == "INVALID_ACCOUNT":
-                print(f"--> [REMOVING INVALID EMAIL] {email} does not exist. Permanently dropping from batch.")
-                should_remove = True
-            elif status == "LIMIT_REACHED":
-                print(f"--> [REMOVING] {email} hit daily limit text alert.")
-                should_remove = True
-            elif account_stats[email]["no_ok_count"] >= 4:
-                print(f"--> [REMOVING] {email} missed OK button 4 times in a row. Dropping account.")
-                should_remove = True
-            elif account_stats[email]["total_runs"] >= 11:
-                print(f"--> [REMOVING] {email} reached maximum 11 attempt safety cap.")
-                should_remove = True
-
-            if should_remove:
+            if status == "LIMIT_REACHED":
+                print(f"--> [REMOVING ACCOUNT] {account['email']} reached limit. Dropping from active batch.")
                 active_batch.pop(current_idx)
+
                 if remaining_pool:
                     new_acc = remaining_pool.pop(0)
                     print(f"--> [ADDING NEW ACCOUNT] Pulled {new_acc['email']} into slot {current_idx + 1}.")
@@ -428,7 +371,7 @@ def run_all_accounts():
                 time.sleep(1)
 
         print("\n" + "=" * 60)
-        print("ALL ACCOUNTS PROCESSED AND EXHAUSTED FOR TODAY!")
+        print("ALL 41 ACCOUNTS HAVE REACHED THEIR DAILY AD LIMIT FOR TODAY!")
         print("=" * 60)
         browser.close()
 
