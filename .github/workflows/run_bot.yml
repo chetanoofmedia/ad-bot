@@ -1,9 +1,7 @@
 name: Run Daily Ad Bot
 
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: '5 16 * * *' # Auto-runs daily at 9:35 PM IST (16:05 UTC)
+  workflow_dispatch: # Enables manual triggering only
 
 jobs:
   run-automation:
@@ -54,7 +52,7 @@ jobs:
         run: python -u bot.py
 
       - name: Upload Execution Videos
-        if: always() # Uploads video artifact on success, failure, OR manual cancel
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: execution-videos
