@@ -49,28 +49,8 @@ TARGET_BATCH_SIZE = 5
 # AUTOMATION HELPER FUNCTIONS
 # ============================================================
 
-def check_login_failed(page):
-    try:
-        error_texts = [
-            "Email does not exist!",
-            "Email does not exist",
-            "Invalid email or password",
-            "User not found",
-            "Password is incorrect",
-            "Please enter a valid email address"
-        ]
-        for frame in page.frames:
-            for txt in error_texts:
-                element = frame.get_by_text(txt, exact=False)
-                if element.count() > 0 and element.first.is_visible():
-                    return True
-    except Exception:
-        pass
-    return False
-
-
 def purge_popups(page):
-    """Hides promotional popups via CSS without deleting DOM elements."""
+    """Removes floating ad widgets and modal backdrops."""
     try:
         page.keyboard.press("Escape")
         page.wait_for_timeout(300)
@@ -83,9 +63,7 @@ def purge_popups(page):
                 'Celebrity Twin Finder', 
                 'Find Your Star', 
                 'GPT Image 2.5', 
-                "WHAT'S NEW",
-                'SEEDANCE',
-                'WAN 3.0'
+                "WHAT'S NEW"
             ];
             
             const allNodes = Array.from(document.querySelectorAll('*'));
@@ -96,8 +74,7 @@ def purge_popups(page):
                         if (!container || container === document.body) break;
                         const style = window.getComputedStyle(container);
                         if (style.position === 'fixed' || style.position === 'absolute' || container.getAttribute('role') === 'dialog') {
-                            container.style.display = 'none';
-                            container.style.pointerEvents = 'none';
+                            container.remove();
                             break;
                         }
                         container = container.parentElement;
@@ -106,17 +83,14 @@ def purge_popups(page):
             });
 
             const overlays = document.querySelectorAll('[class*="backdrop"], [class*="overlay"], div[role="dialog"]');
-            overlays.forEach(o => {
-                o.style.display = 'none';
-                o.style.pointerEvents = 'none';
-            });
+            overlays.forEach(o => o.remove());
         }""")
     except Exception:
         pass
 
 
 def check_daily_limit_reached(page):
-    """Checks if daily ad watch limit alert appears on screen."""
+    """Checks if the daily limit toast alert appears on page."""
     try:
         limit_text = "You have used all your ad watch opportunities for today"
         for frame in page.frames:
@@ -128,75 +102,8 @@ def check_daily_limit_reached(page):
     return False
 
 
-def is_ad_playing(page):
-    """Verifies whether the ad overlay or ad player URL route is active."""
-    if "ad_fullscreen_ad" in page.url:
-        return True
-
-    try:
-        for frame in page.frames:
-            if frame.get_by_text("Close", exact=True).is_visible() or \
-               frame.get_by_text("Advertisement", exact=False).is_visible() or \
-               frame.locator("text=/^close$/i").is_visible():
-                return True
-        return page.evaluate("""() => {
-            const els = Array.from(document.querySelectorAll('*'));
-            return els.some(el => 
-                el.children.length === 0 && 
-                (el.textContent.trim().toLowerCase() === 'close' || el.textContent.includes('Advertisement')) && 
-                el.offsetWidth > 0 && el.offsetHeight > 0
-            );
-        }""")
-    except Exception:
-        return False
-
-
-def click_watch_ad(page):
-    """Clicks 'Go Now' to launch ad, falling back to direct ad URL if needed."""
-    purge_popups(page)
-
-    # 1. Scroll card into view
-    try:
-        card = page.locator("div").filter(has_text="Watch ad to earn credits").last
-        if card.is_visible():
-            card.scroll_into_view_if_needed()
-            page.wait_for_timeout(500)
-    except Exception:
-        pass
-
-    # 2. Click "Go Now"
-    try:
-        card = page.locator("div").filter(has_text="Watch ad to earn credits").last
-        btn = card.get_by_text("Go Now").last
-        if btn.is_visible():
-            btn.click(force=True)
-    except Exception:
-        try:
-            page.get_by_text("Go Now").last.click(force=True)
-        except Exception:
-            pass
-
-    page.wait_for_timeout(2500)
-
-    # 3. Check if ad player opened
-    if is_ad_playing(page) or check_daily_limit_reached(page):
-        return True
-
-    # 4. Fallback: Navigate directly to full-screen ad route
-    try:
-        print("Fallback: Direct navigating to /earn-credits/ad_fullscreen_ad...")
-        page.goto("https://easemate.ai/earn-credits/ad_fullscreen_ad", wait_until="load")
-        page.wait_for_timeout(3000)
-        if is_ad_playing(page) or check_daily_limit_reached(page):
-            return True
-    except Exception:
-        pass
-
-    return False
-
-
 def click_close_button(page):
-    """Finds and clicks top-right 'Close' element after video finishes."""
+    """Finds all visible 'Close' elements after watching an ad and clicks them."""
     try:
         page.keyboard.press("Escape")
         page.wait_for_timeout(500)
@@ -219,10 +126,8 @@ def click_close_button(page):
                         box = element.bounding_box()
                         if box:
                             page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-                        else:
-                            element.click(force=True)
-                        page.wait_for_timeout(1000)
-                        return True
+                            page.wait_for_timeout(1000)
+                            return True
             except Exception:
                 pass
 
@@ -230,7 +135,7 @@ def click_close_button(page):
 
 
 def click_ok_button(page):
-    """Clicks credit reward OK button on completion modal."""
+    """Clicks the credit reward OK button across main page and frames."""
     page.wait_for_timeout(1500)
     for frame in page.frames:
         locators = [
@@ -248,6 +153,48 @@ def click_ok_button(page):
                         return True
             except Exception:
                 pass
+    return False
+
+
+def click_watch_ad(page):
+    """Locates and clicks 'Go Now' inside the Watch Ad card."""
+    try:
+        clicked = page.evaluate("""() => {
+            const allElements = Array.from(document.querySelectorAll('*'));
+            const watchAdTitle = allElements.find(el =>
+                el.children.length === 0 && el.textContent.includes('Watch ad to earn credits')
+            );
+            if (!watchAdTitle) return false;
+
+            let card = watchAdTitle;
+            while (card && card.parentElement && !card.textContent.includes('10 ads/day')) {
+                card = card.parentElement;
+            }
+            if (!card) card = watchAdTitle.closest('div');
+            if (!card) return false;
+
+            const elements = Array.from(card.querySelectorAll('*'));
+            const goNowBtn = elements.find(el =>
+                el.textContent.trim().toLowerCase().includes('go now')
+            );
+
+            if (!goNowBtn) return false;
+
+            goNowBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+            goNowBtn.click();
+            return true;
+        }""")
+        if clicked:
+            return True
+    except Exception:
+        pass
+
+    try:
+        page.locator("div").filter(has_text="Watch ad to earn credits").get_by_text("Go Now").last.click(force=True)
+        return True
+    except Exception:
+        pass
+
     return False
 
 
@@ -281,37 +228,39 @@ def process_single_account(page, account):
     page.get_by_role("button", name="Log in").last.click()
     page.wait_for_timeout(4000)
 
-    if check_login_failed(page):
-        print(f"[{email}] LOGIN FAILED: Invalid account credentials!")
-        return "INVALID_ACCOUNT"
-
-    # 2. Earn Credits Navigation
+    # 2. Earn Credits
     print(f"[{email}] Navigating to Earn Credits page...")
     page.goto("https://easemate.ai/earn-credits", wait_until="load")
     page.wait_for_timeout(4000)
 
-    # 3. Purge floating widgets & Check limit
+    # 3. Purge floating widgets & Scroll
     purge_popups(page)
     page.wait_for_timeout(1000)
 
+    # Check limit immediately on page load
     if check_daily_limit_reached(page):
         print(f"[{email}] LIMIT DETECTED: Account has used all ad opportunities for today!")
         return "LIMIT_REACHED"
 
-    # 4. Click Go Now / Open Ad Route
+    page.mouse.wheel(0, 500)
+    page.wait_for_timeout(1000)
+
+    # 4. Click Go Now
     print(f"[{email}] Starting ad task...")
+    purge_popups(page)
     if not click_watch_ad(page):
-        print(f"[{email}] ERROR: Could not open ad player. Skipping...")
+        print(f"[{email}] ERROR: Could not click 'Go Now'. Skipping...")
         return "ERROR"
 
-    # 5. Check limit toast
+    # 5. Check if Daily Limit Toast Appears after clicking "Go Now"
+    page.wait_for_timeout(2000)
     if check_daily_limit_reached(page):
-        print(f"[{email}] LIMIT DETECTED: Daily limit reached.")
+        print(f"[{email}] LIMIT DETECTED: 'You have used all your ad watch opportunities for today.'")
         return "LIMIT_REACHED"
 
-    # 6. Wait for Video Playback (35 seconds)
-    print(f"[{email}] Ad verified open! Watching video ad (35s)...")
-    time.sleep(35)
+    # 6. Wait for Video Playback (32 seconds)
+    print(f"[{email}] Watching video ad (32s)...")
+    time.sleep(32)
 
     # 7. Close Ad
     print(f"[{email}] Closing ad player...")
@@ -353,13 +302,16 @@ def run_all_accounts():
         print(f"Starting active batch with {len(active_batch)} accounts.")
         print(f"Accounts waiting in reserve pool: {len(remaining_pool)}")
 
+        # Headful mode enabled for full video ad support via Xvfb
         browser = p.chromium.launch(
-            headless=True,
+            headless=False,
             args=[
+                "--start-maximized",
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
-                "--disable-blink-features=AutomationControlled"
+                "--disable-blink-features=AutomationControlled",
+                "--autoplay-policy=no-user-gesture-required"
             ]
         )
 
@@ -375,7 +327,7 @@ def run_all_accounts():
             print(f"\n[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {account['email']}")
 
             context = browser.new_context(
-                viewport={"width": 1920, "height": 1080},
+                no_viewport=True,
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
                 record_video_dir="videos/",
                 record_video_size={"width": 1920, "height": 1080}
