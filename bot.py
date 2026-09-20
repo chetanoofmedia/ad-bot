@@ -3,20 +3,46 @@ import time
 from playwright.sync_api import sync_playwright
 
 # ============================================================
-# LOAD ALL CREDENTIALS FROM GITHUB SECRETS
+# LOAD CREDENTIALS FROM GITHUB SECRETS OR FALLBACK LIST
 # ============================================================
 raw_emails = os.environ.get("ALL_EMAILS", "")
-email_password = os.environ.get("ACCOUNT_PASSWORD", "")
+email_password = os.environ.get("ACCOUNT_PASSWORD", "Mansi@1996")
 
-ALL_EMAILS = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip()]
-
-if not ALL_EMAILS:
-    raise ValueError("ERROR: No emails found in 'ALL_EMAILS' secret! Please configure GitHub Secrets.")
+if raw_emails.strip():
+    ALL_EMAILS = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip()]
+else:
+    ALL_EMAILS = [
+        "kowimu@denipl.net", "namezyxo@denipl.net", "zyqaqy@denipl.net",
+        "fojofi9071@dreameg.com", "xadyhi@forexzig.com", "mycukugu@fxzig.com",
+        "jojeqegu@fxzig.com", "qisadiri@denipl.net", "qizuwuvo@forexzig.com",
+        "taxegocu@fxzig.com", "gujybeci@denipl.net", "juhuraki@denipl.net",
+        "ciforuva@denipl.net", "jafasa@fxzig.com", "buzyka@fxzig.com",
+        "gahivan368@jobscai.com", "6z181rxr1e@yzcalo.com", "ybc80on8sc@lnovic.com",
+        "ztlptskko0@fpklm.com", "gcyb2qe385@fpklm.com", "4tlomtzyll@fpklm.com",
+        "sti17yrntn@fpklm.com", "03v8k1gelr@fpklm.com", "h3w2g8ts62@fpklm.com",
+        "es8ea9c4rq@fpklm.com", "asxxig3fb8@fpklm.com", "4uwexfl87i@fpklm.com",
+        "krhjv2szsm@fpklm.com", "igmed713nt@fpklm.com", "vnzsam39xj@fpklm.com",
+        "tipsunorte@necub.com", "nodrelatri@necub.com", "burduyusti@necub.com",
+        "ladroyurta@necub.com", "custujadra@necub.com", "tortebagnu@necub.com",
+        "kardojopsu@necub.com", "5cbraq7oop@fpklm.com", "vapuk7tqav@fpklm.com",
+        "ynbjdluz8t@fpklm.com", "oo3azfzmrb@fpklm.com", "hcss5i76co@fpklm.com",
+        "smpqce43ny@fpklm.com", "odimwutqlu@fpklm.com", "cnedbyjv4n@fpklm.com",
+        "56p7q75ycb@fpklm.com", "0d499wkj64@fpklm.com", "0n0jn4vl7h@fpklm.com",
+        "bqi5p43xwg@fpklm.com", "qsvcbtcm17@fpklm.com", "wdr65seq2b@gmeenramy.com",
+        "3w8n6svrmu@gmeenramy.com", "5ym3haze8q@ruutukf.com", "ll82zko8wz@yzcalo.com",
+        "cso21mh0s0@yzcalo.com", "9ojp4fpw6o@ruutukf.com", "7xtmhjpntl@gmeenramy.com",
+        "ox6af7cks3@ruutukf.com", "p4bsqnp48w@fpklm.com", "58fy9273ok@fpklm.com",
+        "wdqhy1n32g@fpklm.com", "7d7osqmvx4@fpklm.com", "k0ayhjh6pj@fpklm.com",
+        "1shljho9ct@fpklm.com", "tka4fg4gbh@fpklm.com", "c06l8fh5cr@fpklm.com",
+        "tzud0gclrl@fpklm.com", "xov2wtt5l4@fpklm.com", "c2q4a6ef0y@fpklm.com",
+        "ub5ugi7lyi@fpklm.com", "reydavirte@necub.com", "kilmagitro@necub.com",
+        "mistodispu@necub.com", "borkosufye@necub.com", "zudrobiknu@necub.com",
+        "dispabofyu@necub.com", "tokneralmu@necub.com", "fuknonakno@necub.com",
+        "zatricekku@necub.com", "xeoapq1rw6@yzcalo.com", "yw423x2d2s@ooynib.com"
+    ]
 
 ACCOUNTS = [{"email": email, "password": email_password} for email in ALL_EMAILS]
-
-BATCH_SIZE = 5
-CYCLES_PER_BATCH = 10
+TARGET_BATCH_SIZE = 5
 
 
 # ============================================================
@@ -43,20 +69,8 @@ def check_login_failed(page):
     return False
 
 
-def check_daily_limit_reached(page):
-    try:
-        limit_text = "You have used all your ad watch opportunities for today"
-        for frame in page.frames:
-            element = frame.get_by_text(limit_text, exact=False)
-            if element.count() > 0 and element.first.is_visible():
-                return True
-    except Exception:
-        pass
-    return False
-
-
 def purge_popups(page):
-    """Removes floating ad widgets (Celebrity Twin Finder, GPT Image 2.5) and modal backdrops."""
+    """Hides promotional popups via CSS without deleting DOM elements."""
     try:
         page.keyboard.press("Escape")
         page.wait_for_timeout(300)
@@ -82,7 +96,8 @@ def purge_popups(page):
                         if (!container || container === document.body) break;
                         const style = window.getComputedStyle(container);
                         if (style.position === 'fixed' || style.position === 'absolute' || container.getAttribute('role') === 'dialog') {
-                            container.remove();
+                            container.style.display = 'none';
+                            container.style.pointerEvents = 'none';
                             break;
                         }
                         container = container.parentElement;
@@ -91,36 +106,100 @@ def purge_popups(page):
             });
 
             const overlays = document.querySelectorAll('[class*="backdrop"], [class*="overlay"], div[role="dialog"]');
-            overlays.forEach(o => o.remove());
+            overlays.forEach(o => {
+                o.style.display = 'none';
+                o.style.pointerEvents = 'none';
+            });
         }""")
     except Exception:
         pass
+
+
+def check_daily_limit_reached(page):
+    """Checks if daily ad watch limit alert appears on screen."""
+    try:
+        limit_text = "You have used all your ad watch opportunities for today"
+        for frame in page.frames:
+            element = frame.get_by_text(limit_text, exact=False)
+            if element.count() > 0 and element.first.is_visible():
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def is_ad_playing(page):
+    """Verifies whether the ad overlay or ad player URL route is active."""
+    if "ad_fullscreen_ad" in page.url:
+        return True
+
+    try:
+        for frame in page.frames:
+            if frame.get_by_text("Close", exact=True).is_visible() or \
+               frame.get_by_text("Advertisement", exact=False).is_visible() or \
+               frame.locator("text=/^close$/i").is_visible():
+                return True
+        return page.evaluate("""() => {
+            const els = Array.from(document.querySelectorAll('*'));
+            return els.some(el => 
+                el.children.length === 0 && 
+                (el.textContent.trim().toLowerCase() === 'close' || el.textContent.includes('Advertisement')) && 
+                el.offsetWidth > 0 && el.offsetHeight > 0
+            );
+        }""")
+    except Exception:
+        return False
+
+
+def click_watch_ad(page):
+    """Clicks 'Go Now' to launch ad, falling back to direct ad URL if needed."""
+    purge_popups(page)
+
+    # 1. Scroll card into view
+    try:
+        card = page.locator("div").filter(has_text="Watch ad to earn credits").last
+        if card.is_visible():
+            card.scroll_into_view_if_needed()
+            page.wait_for_timeout(500)
+    except Exception:
+        pass
+
+    # 2. Click "Go Now"
+    try:
+        card = page.locator("div").filter(has_text="Watch ad to earn credits").last
+        btn = card.get_by_text("Go Now").last
+        if btn.is_visible():
+            btn.click(force=True)
+    except Exception:
+        try:
+            page.get_by_text("Go Now").last.click(force=True)
+        except Exception:
+            pass
+
+    page.wait_for_timeout(2500)
+
+    # 3. Check if ad player opened
+    if is_ad_playing(page) or check_daily_limit_reached(page):
+        return True
+
+    # 4. Fallback: Navigate directly to full-screen ad route
+    try:
+        print("Fallback: Direct navigating to /earn-credits/ad_fullscreen_ad...")
+        page.goto("https://easemate.ai/earn-credits/ad_fullscreen_ad", wait_until="load")
+        page.wait_for_timeout(3000)
+        if is_ad_playing(page) or check_daily_limit_reached(page):
+            return True
+    except Exception:
+        pass
+
+    return False
 
 
 def click_close_button(page):
-    """Finds all visible 'Close' elements after watching an ad and clicks them."""
+    """Finds and clicks top-right 'Close' element after video finishes."""
     try:
         page.keyboard.press("Escape")
         page.wait_for_timeout(500)
-    except Exception:
-        pass
-
-    try:
-        clicked = page.evaluate("""() => {
-            const allElements = Array.from(document.querySelectorAll('*'));
-            const closeEl = allElements.find(el => 
-                el.children.length === 0 && 
-                el.textContent.trim().toLowerCase() === 'close' &&
-                el.offsetWidth > 0 && el.offsetHeight > 0
-            );
-            if (closeEl) {
-                closeEl.click();
-                return true;
-            }
-            return false;
-        }""")
-        if clicked:
-            return True
     except Exception:
         pass
 
@@ -129,8 +208,7 @@ def click_close_button(page):
             frame.get_by_text("Close", exact=True),
             frame.locator("text=/^close$/i"),
             frame.locator("button:has-text('Close')"),
-            frame.locator("[role='button']:has-text('Close')"),
-            frame.locator("span:has-text('Close')")
+            frame.locator("[role='button']:has-text('Close')")
         ]
         for loc in locators:
             try:
@@ -152,28 +230,8 @@ def click_close_button(page):
 
 
 def click_ok_button(page):
-    """Clicks the credit reward OK button across main page and frames."""
+    """Clicks credit reward OK button on completion modal."""
     page.wait_for_timeout(1500)
-
-    try:
-        clicked = page.evaluate("""() => {
-            const allElements = Array.from(document.querySelectorAll('*'));
-            const okBtn = allElements.find(el => 
-                (el.tagName === 'BUTTON' || el.tagName === 'DIV' || el.tagName === 'SPAN') &&
-                el.textContent.trim().toLowerCase() === 'ok' &&
-                el.offsetWidth > 0 && el.offsetHeight > 0
-            );
-            if (okBtn) {
-                okBtn.click();
-                return true;
-            }
-            return false;
-        }""")
-        if clicked:
-            return True
-    except Exception:
-        pass
-
     for frame in page.frames:
         locators = [
             frame.get_by_role("button", name="OK"),
@@ -190,48 +248,6 @@ def click_ok_button(page):
                         return True
             except Exception:
                 pass
-    return False
-
-
-def click_watch_ad(page):
-    """Locates and clicks 'Go Now' inside the Watch Ad card."""
-    try:
-        clicked = page.evaluate("""() => {
-            const allElements = Array.from(document.querySelectorAll('*'));
-            const watchAdTitle = allElements.find(el =>
-                el.children.length === 0 && el.textContent.includes('Watch ad to earn credits')
-            );
-            if (!watchAdTitle) return false;
-
-            let card = watchAdTitle;
-            while (card && card.parentElement && !card.textContent.includes('10 ads/day')) {
-                card = card.parentElement;
-            }
-            if (!card) card = watchAdTitle.closest('div');
-            if (!card) return false;
-
-            const elements = Array.from(card.querySelectorAll('*'));
-            const goNowBtn = elements.find(el =>
-                el.textContent.trim().toLowerCase().includes('go now')
-            );
-
-            if (!goNowBtn) return false;
-
-            goNowBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
-            goNowBtn.click();
-            return true;
-        }""")
-        if clicked:
-            return True
-    except Exception:
-        pass
-
-    try:
-        page.locator("div").filter(has_text="Watch ad to earn credits").get_by_text("Go Now").last.click(force=True)
-        return True
-    except Exception:
-        pass
-
     return False
 
 
@@ -274,34 +290,30 @@ def process_single_account(page, account):
     page.goto("https://easemate.ai/earn-credits", wait_until="load")
     page.wait_for_timeout(4000)
 
-    # 3. Purge floating widgets & Scroll
+    # 3. Purge floating widgets & Check limit
     purge_popups(page)
     page.wait_for_timeout(1000)
 
     if check_daily_limit_reached(page):
-        print(f"[{email}] LIMIT DETECTED: Daily limit reached!")
+        print(f"[{email}] LIMIT DETECTED: Account has used all ad opportunities for today!")
         return "LIMIT_REACHED"
 
-    page.mouse.wheel(0, 500)
-    page.wait_for_timeout(1000)
-
-    # 4. Click Go Now
+    # 4. Click Go Now / Open Ad Route
     print(f"[{email}] Starting ad task...")
-    purge_popups(page)
     if not click_watch_ad(page):
-        print(f"[{email}] ERROR: Could not click 'Go Now'. Skipping...")
+        print(f"[{email}] ERROR: Could not open ad player. Skipping...")
         return "ERROR"
 
-    page.wait_for_timeout(2000)
+    # 5. Check limit toast
     if check_daily_limit_reached(page):
-        print(f"[{email}] LIMIT DETECTED: Daily limit reached!")
+        print(f"[{email}] LIMIT DETECTED: Daily limit reached.")
         return "LIMIT_REACHED"
 
-    # 5. Wait for Video Playback
-    print(f"[{email}] Watching video ad (38s)...")
-    time.sleep(38)
+    # 6. Wait for Video Playback (35 seconds)
+    print(f"[{email}] Ad verified open! Watching video ad (35s)...")
+    time.sleep(35)
 
-    # 6. Close Ad
+    # 7. Close Ad
     print(f"[{email}] Closing ad player...")
     if click_close_button(page):
         print(f"[{email}] Ad closed successfully.")
@@ -310,10 +322,10 @@ def process_single_account(page, account):
 
     page.wait_for_timeout(2000)
 
-    # 7. Claim OK
+    # 8. Claim OK
     print(f"[{email}] Claiming reward...")
     if click_ok_button(page):
-        print(f"[{email}] SUCCESS: Reward claimed for {email}!")
+        print(f"[{email}] SUCCESS: Reward claimed!")
     else:
         print(f"[{email}] Warning: OK button not found.")
 
@@ -321,18 +333,26 @@ def process_single_account(page, account):
 
 
 # ============================================================
-# BATCH & MULTI-CYCLE RUNNER
+# DYNAMIC 5-ACCOUNT SLIDING BATCH RUNNER
 # ============================================================
 
 def run_all_accounts():
     os.makedirs("videos", exist_ok=True)
-    batches = [ACCOUNTS[i:i + BATCH_SIZE] for i in range(0, len(ACCOUNTS), BATCH_SIZE)]
-    total_batches = len(batches)
+    remaining_pool = list(ACCOUNTS)
+    active_batch = []
+
+    # Initialize batch with first 5 accounts
+    while remaining_pool and len(active_batch) < TARGET_BATCH_SIZE:
+        active_batch.append(remaining_pool.pop(0))
+
+    cycle_count = 1
+    current_idx = 0
 
     with sync_playwright() as p:
-        print(f"Total accounts loaded: {len(ACCOUNTS)}")
-        print(f"Structure: {total_batches} batches x {BATCH_SIZE} accounts x {CYCLES_PER_BATCH} cycles per batch.")
-        
+        print(f"Total Accounts Loaded: {len(ACCOUNTS)}")
+        print(f"Starting active batch with {len(active_batch)} accounts.")
+        print(f"Accounts waiting in reserve pool: {len(remaining_pool)}")
+
         browser = p.chromium.launch(
             headless=True,
             args=[
@@ -343,36 +363,49 @@ def run_all_accounts():
             ]
         )
 
-        for batch_index, current_batch in enumerate(batches, start=1):
-            print("\n" + "=" * 60)
-            print(f"   STARTING BATCH {batch_index} OF {total_batches}")
-            print(f"   Accounts in this batch: {[acc['email'] for acc in current_batch]}")
-            print("=" * 60)
+        while active_batch:
+            if current_idx >= len(active_batch):
+                current_idx = 0
+                cycle_count += 1
+                print("\n" + "=" * 60)
+                print(f"   STARTING CYCLE {cycle_count} ACROSS CURRENT {len(active_batch)} ACTIVE ACCOUNTS")
+                print("=" * 60)
 
-            for cycle in range(1, CYCLES_PER_BATCH + 1):
-                print(f"\n>>> [Batch {batch_index}/{total_batches}] CYCLE {cycle} OF {CYCLES_PER_BATCH} <<<")
+            account = active_batch[current_idx]
+            print(f"\n[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {account['email']}")
 
-                for acc_index, account in enumerate(current_batch, start=1):
-                    print(f"\n[Batch {batch_index}/{total_batches} | Cycle {cycle}/{CYCLES_PER_BATCH}] Account {acc_index}/{len(current_batch)} ({account['email']})")
+            context = browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                record_video_dir="videos/",
+                record_video_size={"width": 1920, "height": 1080}
+            )
+            page = context.new_page()
 
-                    context = browser.new_context(
-                        viewport={"width": 1920, "height": 1080},
-                        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                        record_video_dir="videos/",
-                        record_video_size={"width": 1920, "height": 1080}
-                    )
-                    page = context.new_page()
+            try:
+                status = process_single_account(page, account)
+            except Exception as e:
+                print(f"Error executing {account['email']}: {e}")
+                status = "ERROR"
 
-                    try:
-                        status = process_single_account(page, account)
-                    except Exception as e:
-                        print(f"Error processing {account['email']}: {e}")
+            context.close()
 
-                    context.close()
-                    time.sleep(2)
+            if status == "LIMIT_REACHED":
+                print(f"--> [REMOVING ACCOUNT] {account['email']} reached limit. Dropping from active batch.")
+                active_batch.pop(current_idx)
+
+                if remaining_pool:
+                    new_acc = remaining_pool.pop(0)
+                    print(f"--> [ADDING NEW ACCOUNT] Pulled {new_acc['email']} into slot {current_idx + 1}.")
+                    active_batch.insert(current_idx, new_acc)
+                else:
+                    print(f"--> Pool empty. Active batch size reduced to {len(active_batch)}.")
+            else:
+                current_idx += 1
+                time.sleep(1)
 
         print("\n" + "=" * 60)
-        print("ALL BATCHES AND CYCLES COMPLETED SUCCESSFULLY!")
+        print("ALL ACCOUNTS HAVE REACHED THEIR DAILY AD LIMIT FOR TODAY!")
         print("=" * 60)
         browser.close()
 
