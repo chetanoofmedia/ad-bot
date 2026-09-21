@@ -1,26 +1,6 @@
 import os
 import time
-import signal
-import sys
 from playwright.sync_api import sync_playwright
-
-current_context = None
-
-
-def shutdown_handler(sig, frame):
-    global current_context
-    print("\n--> [STOP / CANCEL DETECTED] Closing context to flush video file...")
-    if current_context:
-        try:
-            current_context.close()
-            print("--> [SUCCESS] Video saved successfully!")
-        except Exception as e:
-            print(f"--> Error closing context: {e}")
-    sys.exit(0)
-
-
-signal.signal(signal.SIGINT, shutdown_handler)
-signal.signal(signal.SIGTERM, shutdown_handler)
 
 # ============================================================
 # READ EMAILS FROM emails.txt WITH FALLBACK TO SECRETS/ENV
@@ -374,7 +354,6 @@ def process_single_account(page, account):
 
 
 def run_all_accounts():
-    global current_context
     remaining_pool = list(ACCOUNTS)
     active_batch = []
 
@@ -384,13 +363,11 @@ def run_all_accounts():
     cycle_count = 1
     current_idx = 0
 
-    os.makedirs("videos", exist_ok=True)
-
     with sync_playwright() as p:
         print(f"Total Accounts Loaded: {len(ACCOUNTS)}")
         
         browser = p.chromium.launch(
-            headless=False,
+            headless=True,
             args=[
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
@@ -412,11 +389,8 @@ def run_all_accounts():
 
             context = browser.new_context(
                 viewport={"width": 1920, "height": 1080},
-                record_video_dir="videos/",
-                record_video_size={"width": 1920, "height": 1080},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             )
-            current_context = context
             page = context.new_page()
 
             try:
@@ -426,7 +400,6 @@ def run_all_accounts():
                 status = "ERROR"
 
             context.close()
-            current_context = None
 
             if status == "LIMIT_REACHED":
                 print(f"--> [REMOVING ACCOUNT] {account['email']} reached limit. Dropping from active batch.")
