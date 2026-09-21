@@ -15,18 +15,38 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install Python & VNC Dependencies
+      # 1. Cache Pip Dependencies
+      - name: Cache Pip Packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # 2. Cache Playwright Chromium Binaries (~150MB)
+      - name: Cache Playwright Binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install playwright
-          playwright install --with-deps chromium
+
+      - name: Install Playwright & Linux System Dependencies
+        run: |
+          playwright install chromium
           sudo apt-get update
           sudo apt-get install -y xvfb x11vnc novnc websockify
 
       - name: Start Live Web VNC Stream
         run: |
-          # Ensure videos directory exists
           mkdir -p videos
 
           # Start Virtual Display
@@ -72,7 +92,7 @@ jobs:
         run: python -u bot.py
 
       - name: Upload Execution Videos
-        if: always() # Uploads videos on success, failure, OR manual stop
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: execution-videos
