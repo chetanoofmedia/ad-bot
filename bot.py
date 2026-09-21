@@ -19,7 +19,6 @@ def shutdown_handler(sig, frame):
     sys.exit(0)
 
 
-# Catch manual cancellation signals to safely flush video files
 signal.signal(signal.SIGINT, shutdown_handler)
 signal.signal(signal.SIGTERM, shutdown_handler)
 
@@ -35,7 +34,7 @@ else:
     print("--> 'emails.txt' not found. Falling back to ALL_EMAILS environment variable...")
     raw_emails = os.environ.get("ALL_EMAILS", "")
 
-email_password = os.environ.get("ACCOUNT_PASSWORD", "Chetan@2026")
+email_password = os.environ.get("ACCOUNT_PASSWORD", "")
 ALL_EMAILS = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip()]
 
 if not ALL_EMAILS:
@@ -94,7 +93,6 @@ def click_close_button(page):
     for attempt in range(15):
         page.wait_for_timeout(1000)
 
-        # Layer 1: Frame Locator Traversal across main page + nested Google Ad iframes
         for frame in page.frames:
             close_selectors = [
                 "text=/^close$/i",
@@ -124,7 +122,6 @@ def click_close_button(page):
                 except Exception:
                     pass
 
-        # Layer 2: JavaScript DOM leaf-node text match
         try:
             closed = page.evaluate("""() => {
                 function clickCloseInDoc(doc) {
@@ -161,7 +158,6 @@ def click_close_button(page):
         except Exception:
             pass
 
-        # Layer 3: Physical Mouse Coordinate Clicks for Google Interstitial (#goog_fullscreen_ad)
         if attempt >= 3:
             coords = [(1515, 235), (1520, 240), (1500, 230), (1480, 240), (1540, 245)]
             for cx, cy in coords:
@@ -171,13 +167,11 @@ def click_close_button(page):
                 except Exception:
                     pass
 
-        # Layer 4: Keyboard Escape
         try:
             page.keyboard.press("Escape")
         except Exception:
             pass
 
-    # Layer 5: Emergency Recovery - Reload page if ad overlay remains stuck
     print("--> [RECOVERY] Ad overlay did not respond. Refreshing page to clear modal...")
     try:
         page.goto("https://easemate.ai/earn-credits", wait_until="load")
@@ -396,7 +390,7 @@ def run_all_accounts():
         print(f"Total Accounts Loaded: {len(ACCOUNTS)}")
         
         browser = p.chromium.launch(
-            headless=True,  # Set to True for fastest execution without VNC overhead
+            headless=False,
             args=[
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
@@ -430,9 +424,9 @@ def run_all_accounts():
             except Exception as e:
                 print(f"Error executing {account['email']}: {e}")
                 status = "ERROR"
-            finally:
-                context.close()
-                current_context = None
+
+            context.close()
+            current_context = None
 
             if status == "LIMIT_REACHED":
                 print(f"--> [REMOVING ACCOUNT] {account['email']} reached limit. Dropping from active batch.")
@@ -456,4 +450,3 @@ def run_all_accounts():
 
 if __name__ == "__main__":
     run_all_accounts()
-    
