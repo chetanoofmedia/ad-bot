@@ -19,7 +19,7 @@ def shutdown_handler(sig, frame):
     sys.exit(0)
 
 
-# Catch manual cancellation signals to save videos
+# Catch manual cancellation signals to safely flush video files
 signal.signal(signal.SIGINT, shutdown_handler)
 signal.signal(signal.SIGTERM, shutdown_handler)
 
@@ -35,7 +35,7 @@ else:
     print("--> 'emails.txt' not found. Falling back to ALL_EMAILS environment variable...")
     raw_emails = os.environ.get("ALL_EMAILS", "")
 
-email_password = os.environ.get("ACCOUNT_PASSWORD", "")
+email_password = os.environ.get("ACCOUNT_PASSWORD", "Chetan@2026")
 ALL_EMAILS = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip()]
 
 if not ALL_EMAILS:
@@ -396,7 +396,7 @@ def run_all_accounts():
         print(f"Total Accounts Loaded: {len(ACCOUNTS)}")
         
         browser = p.chromium.launch(
-            headless=False,
+            headless=True,  # Set to True for fastest execution without VNC overhead
             args=[
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
@@ -431,7 +431,6 @@ def run_all_accounts():
                 print(f"Error executing {account['email']}: {e}")
                 status = "ERROR"
             finally:
-                # Guarantees video is written to disk before closing context
                 context.close()
                 current_context = None
 
