@@ -1,7 +1,7 @@
 name: Run Daily Ad Bot
 
 on:
-  workflow_dispatch: # Enables manual triggering only
+  workflow_dispatch: # Enabled for manual triggering only
 
 jobs:
   run-automation:
@@ -26,23 +26,43 @@ jobs:
 
       - name: Start Live Web VNC Stream
         run: |
+          # Ensure videos directory exists
+          mkdir -p videos
+
+          # Start Virtual Display
           Xvfb :99 -screen 0 1920x1080x24 &
           export DISPLAY=:99
           sleep 2
           
+          # Start VNC Server
           x11vnc -display :99 -forever -shared -rfbport 5900 -nopw &
           sleep 2
           
+          # Start Web VNC Proxy (port 6080)
           /usr/share/novnc/utils/novnc_proxy --vnc localhost:5900 --listen 6080 &
           sleep 2
           
+          # Tunnel port 6080 through Pinggy
           ssh -p 443 -R0:localhost:6080 -o StrictHostKeyChecking=no a.pinggy.io > pinggy.log 2>&1 &
-          sleep 5
           
-          BASE_URL=$(cat pinggy.log | grep -o 'https://[^" ]*' | head -n 1)
+          # Wait up to 15 seconds for Pinggy tunnel URL to establish
+          echo "Waiting for Pinggy tunnel..."
+          for i in {1..15}; do
+            BASE_URL=$(grep -o 'https://[^" ]*' pinggy.log | head -n 1 || true)
+            if [ -n "$BASE_URL" ]; then
+              break
+            fi
+            sleep 1
+          done
+
           echo "=========================================================="
-          echo "LIVE STREAM URL:"
-          echo "${BASE_URL}/vnc.html"
+          if [ -n "$BASE_URL" ]; then
+            echo "LIVE STREAM URL (Click to view browser in real-time):"
+            echo "${BASE_URL}/vnc.html"
+          else
+            echo "Pinggy Log Output:"
+            cat pinggy.log
+          fi
           echo "=========================================================="
 
       - name: Run Script
@@ -52,9 +72,11 @@ jobs:
         run: python -u bot.py
 
       - name: Upload Execution Videos
-        if: always()
+        if: always() # Uploads videos on success, failure, OR manual stop
         uses: actions/upload-artifact@v4
         with:
           name: execution-videos
           path: videos/
+          if-no-files-found: warn
           retention-days: 7
+          
