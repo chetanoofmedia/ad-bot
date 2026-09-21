@@ -1,6 +1,27 @@
 import os
 import time
+import signal
+import sys
 from playwright.sync_api import sync_playwright
+
+current_context = None
+
+
+def shutdown_handler(sig, frame):
+    global current_context
+    print("\n--> [STOP / CANCEL DETECTED] Closing context to flush video file...")
+    if current_context:
+        try:
+            current_context.close()
+            print("--> [SUCCESS] Video saved successfully!")
+        except Exception as e:
+            print(f"--> Error closing context: {e}")
+    sys.exit(0)
+
+
+# Catch manual cancellation signals to save videos
+signal.signal(signal.SIGINT, shutdown_handler)
+signal.signal(signal.SIGTERM, shutdown_handler)
 
 # ============================================================
 # READ EMAILS FROM emails.txt WITH FALLBACK TO SECRETS/ENV
@@ -73,6 +94,7 @@ def click_close_button(page):
     for attempt in range(15):
         page.wait_for_timeout(1000)
 
+        # Layer 1: Frame Locator Traversal across main page + nested Google Ad iframes
         for frame in page.frames:
             close_selectors = [
                 "text=/^close$/i",
@@ -102,6 +124,7 @@ def click_close_button(page):
                 except Exception:
                     pass
 
+        # Layer 2: JavaScript DOM leaf-node text match
         try:
             closed = page.evaluate("""() => {
                 function clickCloseInDoc(doc) {
@@ -138,6 +161,7 @@ def click_close_button(page):
         except Exception:
             pass
 
+        # Layer 3: Physical Mouse Coordinate Clicks for Google Interstitial (#goog_fullscreen_ad)
         if attempt >= 3:
             coords = [(1515, 235), (1520, 240), (1500, 230), (1480, 240), (1540, 245)]
             for cx, cy in coords:
@@ -147,11 +171,13 @@ def click_close_button(page):
                 except Exception:
                     pass
 
+        # Layer 4: Keyboard Escape
         try:
             page.keyboard.press("Escape")
         except Exception:
             pass
 
+    # Layer 5: Emergency Recovery - Reload page if ad overlay remains stuck
     print("--> [RECOVERY] Ad overlay did not respond. Refreshing page to clear modal...")
     try:
         page.goto("https://easemate.ai/earn-credits", wait_until="load")
@@ -354,6 +380,7 @@ def process_single_account(page, account):
 
 
 def run_all_accounts():
+    global current_context
     remaining_pool = list(ACCOUNTS)
     active_batch = []
 
@@ -363,11 +390,13 @@ def run_all_accounts():
     cycle_count = 1
     current_idx = 0
 
+    os.makedirs("videos", exist_ok=True)
+
     with sync_playwright() as p:
         print(f"Total Accounts Loaded: {len(ACCOUNTS)}")
         
         browser = p.chromium.launch(
-            headless=True,
+            headless=False,
             args=[
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
@@ -389,8 +418,11 @@ def run_all_accounts():
 
             context = browser.new_context(
                 viewport={"width": 1920, "height": 1080},
+                record_video_dir="videos/",
+                record_video_size={"width": 1920, "height": 1080},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             )
+            current_context = context
             page = context.new_page()
 
             try:
@@ -398,8 +430,10 @@ def run_all_accounts():
             except Exception as e:
                 print(f"Error executing {account['email']}: {e}")
                 status = "ERROR"
-
-            context.close()
+            finally:
+                # Guarantees video is written to disk before closing context
+                context.close()
+                current_context = None
 
             if status == "LIMIT_REACHED":
                 print(f"--> [REMOVING ACCOUNT] {account['email']} reached limit. Dropping from active batch.")
@@ -423,3 +457,4 @@ def run_all_accounts():
 
 if __name__ == "__main__":
     run_all_accounts()
+    
