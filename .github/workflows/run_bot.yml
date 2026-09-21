@@ -1,7 +1,7 @@
 name: Run Daily Ad Bot
 
 on:
-  workflow_dispatch: # Enabled for manual triggering only
+  workflow_dispatch: # Manual triggering only
 
 jobs:
   run-automation:
@@ -10,93 +10,45 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python & Pip Cache
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: 'pip'
 
-      # 1. Cache Pip Dependencies
-      - name: Cache Pip Packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      # 2. Cache Playwright Chromium Binaries (~150MB)
-      - name: Cache Playwright Binaries
+      # Cache Playwright Chromium Browser (~150MB)
+      - name: Cache Playwright Chromium
+        id: playwright-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
 
       - name: Install Python Dependencies
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install -r requirements.txt
-          pip install playwright
 
-      - name: Install Playwright & Linux System Dependencies
-        run: |
-          playwright install chromium
-          sudo apt-get update
-          sudo apt-get install -y xvfb x11vnc novnc websockify
+      # Only downloads full browser binaries if cache missed
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: playwright install chromium --with-deps
 
-      - name: Start Live Web VNC Stream
-        run: |
-          mkdir -p videos
-
-          # Start Virtual Display
-          Xvfb :99 -screen 0 1920x1080x24 &
-          export DISPLAY=:99
-          sleep 2
-          
-          # Start VNC Server
-          x11vnc -display :99 -forever -shared -rfbport 5900 -nopw &
-          sleep 2
-          
-          # Start Web VNC Proxy (port 6080)
-          /usr/share/novnc/utils/novnc_proxy --vnc localhost:5900 --listen 6080 &
-          sleep 2
-          
-          # Tunnel port 6080 through Pinggy
-          ssh -p 443 -R0:localhost:6080 -o StrictHostKeyChecking=no a.pinggy.io > pinggy.log 2>&1 &
-          
-          # Wait up to 15 seconds for Pinggy tunnel URL to establish
-          echo "Waiting for Pinggy tunnel..."
-          for i in {1..15}; do
-            BASE_URL=$(grep -o 'https://[^" ]*' pinggy.log | head -n 1 || true)
-            if [ -n "$BASE_URL" ]; then
-              break
-            fi
-            sleep 1
-          done
-
-          echo "=========================================================="
-          if [ -n "$BASE_URL" ]; then
-            echo "LIVE STREAM URL (Click to view browser in real-time):"
-            echo "${BASE_URL}/vnc.html"
-          else
-            echo "Pinggy Log Output:"
-            cat pinggy.log
-          fi
-          echo "=========================================================="
+      # Fast path: Installs only system libraries if browser binary is cached
+      - name: Install System Dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: playwright install-deps chromium
 
       - name: Run Script
         env:
           ACCOUNT_PASSWORD: ${{ secrets.ACCOUNT_PASSWORD }}
-          DISPLAY: ":99"
         run: python -u bot.py
 
       - name: Upload Execution Videos
-        if: always()
+        if: always() # Uploads videos on success, failure, OR manual cancel
         uses: actions/upload-artifact@v4
         with:
           name: execution-videos
           path: videos/
           if-no-files-found: warn
           retention-days: 7
-          
