@@ -34,7 +34,7 @@ else:
     print("--> 'emails.txt' not found. Falling back to ALL_EMAILS environment variable...")
     raw_emails = os.environ.get("ALL_EMAILS", "")
 
-email_password = os.environ.get("ACCOUNT_PASSWORD", "")
+email_password = os.environ.get("ACCOUNT_PASSWORD", "Chetan@2026")
 ALL_EMAILS = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip()]
 
 if not ALL_EMAILS:
@@ -375,8 +375,10 @@ def process_single_account(page, account):
 
 def run_all_accounts():
     global current_context
+    total_loaded = len(ACCOUNTS)
     remaining_pool = list(ACCOUNTS)
     active_batch = []
+    completed_accounts = []
 
     while remaining_pool and len(active_batch) < TARGET_BATCH_SIZE:
         active_batch.append(remaining_pool.pop(0))
@@ -387,7 +389,7 @@ def run_all_accounts():
     os.makedirs("videos", exist_ok=True)
 
     with sync_playwright() as p:
-        print(f"Total Accounts Loaded: {len(ACCOUNTS)}")
+        print(f"Total Accounts Loaded: {total_loaded}")
         
         browser = p.chromium.launch(
             headless=False,
@@ -408,7 +410,16 @@ def run_all_accounts():
                 print("=" * 60)
 
             account = active_batch[current_idx]
-            print(f"\n[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {account['email']}")
+            
+            # --- LIVE PROGRESS LOG SUMMARY ---
+            print("\n" + "-" * 50)
+            print(f" [PROGRESS STATUS]")
+            print(f"  • Total Accounts:            {total_loaded}")
+            print(f"  • Reached Limit (Completed): {len(completed_accounts)}")
+            print(f"  • Currently Active Batch:    {len(active_batch)}")
+            print(f"  • Waiting in Queue:          {len(remaining_pool)}")
+            print("-" * 50)
+            print(f"[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {account['email']}")
 
             context = browser.new_context(
                 viewport={"width": 1920, "height": 1080},
@@ -430,7 +441,8 @@ def run_all_accounts():
 
             if status == "LIMIT_REACHED":
                 print(f"--> [REMOVING ACCOUNT] {account['email']} reached limit. Dropping from active batch.")
-                active_batch.pop(current_idx)
+                finished_acc = active_batch.pop(current_idx)
+                completed_accounts.append(finished_acc)
 
                 if remaining_pool:
                     new_acc = remaining_pool.pop(0)
@@ -443,7 +455,8 @@ def run_all_accounts():
                 time.sleep(1)
 
         print("\n" + "=" * 60)
-        print(f"ALL {len(ACCOUNTS)} ACCOUNTS HAVE REACHED THEIR DAILY AD LIMIT FOR TODAY!")
+        print(f"SUMMARY: ALL {total_loaded} ACCOUNTS HAVE REACHED THEIR DAILY AD LIMIT!")
+        print(f"Completed Accounts Count: {len(completed_accounts)} / {total_loaded}")
         print("=" * 60)
         browser.close()
 
