@@ -1,11 +1,14 @@
 name: Run Daily Ad Bot
 
 on:
-  workflow_dispatch: # Enables manual triggering only
+  workflow_dispatch:        # Allows manual triggering anytime
+  repository_dispatch:     # Listens for auto-restart events from previous runs
+    types: [rerun_ad_bot]
 
 jobs:
   run-automation:
     runs-on: ubuntu-latest
+    timeout-minutes: 340   # Gracefully stops at ~5.6 hours to save videos before timeout
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -55,7 +58,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: execution-videos
+          name: execution-videos-${{ github.run_number }}
           path: videos/
           retention-days: 7
-          
+
+      - name: Trigger Next Run (Auto-Chain)
+        if: always() # Automatically triggers the next run when this job finishes
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: rerun_ad_bot
