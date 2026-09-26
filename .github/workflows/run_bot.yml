@@ -8,7 +8,7 @@ permissions: write-all
 jobs:
   run-automation:
     runs-on: ubuntu-latest
-    timeout-minutes: 340
+    timeout-minutes: 340 # Graceful stop at 5.6 hours to save videos and cache
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -26,6 +26,12 @@ jobs:
           playwright install --with-deps chromium
           sudo apt-get update
           sudo apt-get install -y xvfb x11vnc novnc websockify
+
+      - name: Restore Progress Cache
+        uses: actions/cache/restore@v4
+        with:
+          path: completed_accounts.txt
+          key: completed-accounts-cache
 
       - name: Start Live Web VNC Stream
         run: |
@@ -53,6 +59,13 @@ jobs:
           ACCOUNT_PASSWORD: ${{ secrets.ACCOUNT_PASSWORD }}
           DISPLAY: ":99"
         run: python -u bot.py
+
+      - name: Save Progress Cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: completed_accounts.txt
+          key: completed-accounts-cache-${{ github.run_id }}
 
       - name: Upload Execution Videos
         if: always()
