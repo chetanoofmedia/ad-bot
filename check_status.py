@@ -11,7 +11,7 @@ headers = {
     "Accept": "application/vnd.github.v3+json"
 }
 
-# 1. Check if the current workflow run was cancelled manually
+# 1. Check if current workflow run was cancelled manually
 if repo and token and run_id:
     try:
         run_url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}"
@@ -60,4 +60,3 @@ if completed_count < total_emails:
             print(f"--> [ERROR] Failed to trigger dispatch: {res.status_code} - {res.text}")
 else:
     print("--> [CHECK STATUS] All accounts have reached their daily limit! Stopping loop completely.")
-  
