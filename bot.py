@@ -23,7 +23,7 @@ signal.signal(signal.SIGINT, shutdown_handler)
 signal.signal(signal.SIGTERM, shutdown_handler)
 
 # ============================================================
-# READ EMAILS FROM emails.txt WITH FALLBACK TO SECRETS/ENV
+# READ EMAILS & FILTER COMPLETED ONES
 # ============================================================
 raw_emails = ""
 if os.path.exists("emails.txt"):
@@ -31,21 +31,39 @@ if os.path.exists("emails.txt"):
     with open("emails.txt", "r", encoding="utf-8") as f:
         raw_emails = f.read()
 else:
-    print("--> 'emails.txt' not found. Falling back to ALL_EMAILS environment variable...")
     raw_emails = os.environ.get("ALL_EMAILS", "")
 
 email_password = os.environ.get("ACCOUNT_PASSWORD", "Chetan@2026")
 ALL_EMAILS = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip()]
 
-if not ALL_EMAILS:
-    raise ValueError("ERROR: No email addresses found! Please create 'emails.txt' with your email list.")
+# Load already completed accounts from file
+completed_set = set()
+if os.path.exists("completed_accounts.txt"):
+    with open("completed_accounts.txt", "r", encoding="utf-8") as f:
+        completed_set = {line.strip() for line in f if line.strip()}
+    print(f"--> Found {len(completed_set)} previously completed accounts.")
 
-ACCOUNTS = [{"id": i + 1, "email": email, "password": email_password} for i, email in enumerate(ALL_EMAILS)]
+# AUTO-CLEAR CHECK: If all accounts were completed previously, clear list for a new day
+if len(completed_set) >= len(ALL_EMAILS) and len(ALL_EMAILS) > 0:
+    print("--> [ALL COMPLETED DETECTED] Every account reached limit in the previous run. Clearing completed list for a fresh day!")
+    if os.path.exists("completed_accounts.txt"):
+        os.remove("completed_accounts.txt")
+    completed_set = set()
+
+# Filter out completed accounts so we only process pending ones
+PENDING_EMAILS = [e for e in ALL_EMAILS if e not in completed_set]
+
+if not PENDING_EMAILS:
+    print("--> All accounts completed! Exiting...")
+    if os.path.exists("completed_accounts.txt"):
+        os.remove("completed_accounts.txt")
+    sys.exit(0)
+
+ACCOUNTS = [{"id": i + 1, "email": email, "password": email_password} for i, email in enumerate(PENDING_EMAILS)]
 TARGET_BATCH_SIZE = 5
 
 
 def purge_popups(page):
-    """Safely dismisses promotional popups via UI interactions without destroying DOM nodes."""
     try:
         page.keyboard.press("Escape")
         page.wait_for_timeout(300)
@@ -81,7 +99,6 @@ def check_daily_limit_reached(page):
 
 
 def click_close_button(page):
-    """5-Layer bulletproof close engine specifically targeting Google Interstitial 'Close' buttons."""
     print("--> Waiting for 'Close' button to appear...")
 
     for attempt in range(15):
@@ -242,19 +259,15 @@ def click_ok_button(page):
 
 
 def click_watch_ad(page):
-    """Clicks 'Go Now' with stealth delays and verifies if the central video ad player launched."""
     try:
-        # Give AdSense scripts time to attach event handlers to the button
         page.wait_for_timeout(2000)
 
-        # 1. Direct Playwright Locator Click
         btn = page.locator("div").filter(has_text="Watch ad to earn credits").get_by_text("Go Now").last
         if btn.is_visible():
             btn.scroll_into_view_if_needed()
             page.wait_for_timeout(500)
             btn.click(force=True)
 
-        # 2. JS Click Fallback
         page.evaluate("""() => {
             const allElements = Array.from(document.querySelectorAll('*'));
             const watchAdTitle = allElements.find(el =>
@@ -277,7 +290,6 @@ def click_watch_ad(page):
 
         page.wait_for_timeout(3500)
 
-        # 3. Strict Verification: Check for main overlay, video tag, or Google Ad frame
         has_ad = page.evaluate("""() => {
             const googleFullscreen = document.querySelector('[id*="goog_fullscreen"], [src*="googleads"], [id*="google_ads"]');
             const videoElement = document.querySelector('video');
@@ -345,7 +357,6 @@ def process_single_account(page, account):
 
     print(f"[{email}] Starting ad task...")
     
-    # Retry loop with page reload if ad fails to start
     ad_started = False
     for attempt in range(3):
         purge_popups(page)
@@ -395,10 +406,10 @@ def process_single_account(page, account):
 
 def run_all_accounts():
     global current_context
-    total_loaded = len(ACCOUNTS)
+    total_loaded = len(ALL_EMAILS)
     remaining_pool = list(ACCOUNTS)
     active_batch = []
-    completed_accounts = []
+    completed_accounts = list(completed_set)
 
     while remaining_pool and len(active_batch) < TARGET_BATCH_SIZE:
         active_batch.append(remaining_pool.pop(0))
@@ -409,8 +420,6 @@ def run_all_accounts():
     os.makedirs("videos", exist_ok=True)
 
     with sync_playwright() as p:
-        print(f"Total Accounts Loaded: {total_loaded}")
-        
         browser = p.chromium.launch(
             headless=False,
             args=[
@@ -436,7 +445,7 @@ def run_all_accounts():
             print("\n" + "-" * 50)
             print(f" [PROGRESS STATUS]")
             print(f"  • Total Accounts:            {total_loaded}")
-            print(f"  • Reached Limit (Completed): {len(completed_accounts)}")
+            print(f"  • Already Completed:         {len(completed_accounts)}")
             print(f"  • Currently Active Batch:    {len(active_batch)}")
             print(f"  • Waiting in Queue:          {len(remaining_pool)}")
             print("-" * 50)
@@ -449,7 +458,6 @@ def run_all_accounts():
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             )
             
-            # Mask Playwright automation flags
             page = context.new_page()
             page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             current_context = context
@@ -466,7 +474,10 @@ def run_all_accounts():
             if status == "LIMIT_REACHED":
                 print(f"--> [REMOVING ACCOUNT] {account['email']} reached limit. Dropping from active batch.")
                 finished_acc = active_batch.pop(current_idx)
-                completed_accounts.append(finished_acc)
+                completed_accounts.append(finished_acc['email'])
+
+                with open("completed_accounts.txt", "a", encoding="utf-8") as f:
+                    f.write(f"{finished_acc['email']}\n")
 
                 if remaining_pool:
                     new_acc = remaining_pool.pop(0)
@@ -480,8 +491,12 @@ def run_all_accounts():
 
         print("\n" + "=" * 60)
         print(f"SUMMARY: ALL {total_loaded} ACCOUNTS HAVE REACHED THEIR DAILY AD LIMIT!")
-        print(f"Completed Accounts Count: {len(completed_accounts)} / {total_loaded}")
+        print("--> Clearing completed_accounts.txt so the list is fresh for tomorrow!")
         print("=" * 60)
+        
+        if os.path.exists("completed_accounts.txt"):
+            os.remove("completed_accounts.txt")
+
         browser.close()
 
 
