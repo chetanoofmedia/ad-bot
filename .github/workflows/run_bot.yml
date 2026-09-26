@@ -8,7 +8,7 @@ permissions: write-all
 jobs:
   run-automation:
     runs-on: ubuntu-latest
-    timeout-minutes: 340 # Graceful stop at 5.6 hours to save videos and cache
+    timeout-minutes: 340 # Graceful cutoff at 5.6 hours
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -27,11 +27,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb x11vnc novnc websockify
 
-      - name: Restore Progress Cache
-        uses: actions/cache/restore@v4
+      # Restore progress file from previous run artifact
+      - name: Download Progress State
+        uses: dawidd6/action-download-artifact@v6
+        continue-on-error: true
         with:
-          path: completed_accounts.txt
-          key: completed-accounts-cache
+          name: completed-accounts-state
+          path: .
+          if_no_artifact_found: ignore
 
       - name: Start Live Web VNC Stream
         run: |
@@ -60,12 +63,15 @@ jobs:
           DISPLAY: ":99"
         run: python -u bot.py
 
-      - name: Save Progress Cache
+      # Save progress file as an artifact for the next chained run
+      - name: Upload Progress State
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/upload-artifact@v4
         with:
+          name: completed-accounts-state
           path: completed_accounts.txt
-          key: completed-accounts-cache-${{ github.run_id }}
+          retention-days: 1
+          overwrite: true
 
       - name: Upload Execution Videos
         if: always()
@@ -82,3 +88,4 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
         run: python check_status.py
+        
