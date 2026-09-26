@@ -12,6 +12,9 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -26,15 +29,6 @@ jobs:
           playwright install --with-deps chromium
           sudo apt-get update
           sudo apt-get install -y xvfb x11vnc novnc websockify
-
-      # Restore progress file from previous run artifact
-      - name: Download Progress State
-        uses: dawidd6/action-download-artifact@v6
-        continue-on-error: true
-        with:
-          name: completed-accounts-state
-          path: .
-          if_no_artifact_found: ignore
 
       - name: Start Live Web VNC Stream
         run: |
@@ -63,15 +57,18 @@ jobs:
           DISPLAY: ":99"
         run: python -u bot.py
 
-      # Save progress file as an artifact for the next chained run
-      - name: Upload Progress State
+      - name: Commit Updated Progress State
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: completed-accounts-state
-          path: completed_accounts.txt
-          retention-days: 1
-          overwrite: true
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add completed_accounts.txt || true
+          if git status --porcelain | grep -q "completed_accounts.txt"; then
+            git commit -m "update: saved completed accounts progress"
+            git push origin HEAD:${{ github.ref_name }}
+          else
+            echo "No changes in completed_accounts.txt to commit."
+          fi
 
       - name: Upload Execution Videos
         if: always()
@@ -88,4 +85,3 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
         run: python check_status.py
-        
