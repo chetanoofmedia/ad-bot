@@ -46,7 +46,7 @@ if os.path.exists("completed_accounts.txt"):
 print(f"--> [CHECK STATUS] Total Accounts: {total_emails} | Completed: {completed_count}")
 
 # 4. Trigger next run ONLY if accounts are pending AND it was NOT cancelled
-if completed_count < total_emails:
+if total_emails > 0 and completed_count < total_emails:
     print("--> [CHECK STATUS] Pending accounts remain! Triggering next workflow run...")
     
     if repo and token:
@@ -60,3 +60,4 @@ if completed_count < total_emails:
             print(f"--> [ERROR] Failed to trigger dispatch: {res.status_code} - {res.text}")
 else:
     print("--> [CHECK STATUS] All accounts have reached their daily limit! Stopping loop completely.")
+    
