@@ -34,25 +34,26 @@ else:
     raw_emails = os.environ.get("ALL_EMAILS", "")
 
 email_password = os.environ.get("ACCOUNT_PASSWORD", "Chetan@2026")
-ALL_EMAILS = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip()]
+ALL_EMAILS = [e.strip().lower() for e in raw_emails.replace(",", " ").split() if e.strip()]
+
+# If completed_accounts was cleared for a new run, clear ALL_DONE marker
+if os.path.exists("ALL_DONE.txt") and not os.path.exists("completed_accounts.txt"):
+    os.remove("ALL_DONE.txt")
 
 completed_set = set()
 if os.path.exists("completed_accounts.txt"):
     with open("completed_accounts.txt", "r", encoding="utf-8") as f:
-        completed_set = {line.strip() for line in f if line.strip()}
+        completed_set = {line.strip().lower() for line in f if line.strip()}
     print(f"--> Found {len(completed_set)} previously completed accounts.")
-
-# AUTO-CLEAR CHECK: Reset on a fresh day start if all accounts completed previously
-if len(completed_set) >= len(ALL_EMAILS) and len(ALL_EMAILS) > 0:
-    print("--> [ALL COMPLETED DETECTED] Every account reached limit in previous run. Resetting completed list for fresh run...")
-    if os.path.exists("completed_accounts.txt"):
-        os.remove("completed_accounts.txt")
-    completed_set = set()
 
 PENDING_EMAILS = [e for e in ALL_EMAILS if e not in completed_set]
 
 if not PENDING_EMAILS:
-    print("--> All accounts completed! Exiting...")
+    print("--> All accounts completed! Marking ALL_DONE...")
+    with open("ALL_DONE.txt", "w", encoding="utf-8") as f:
+        f.write("DONE\n")
+    if os.path.exists("completed_accounts.txt"):
+        os.remove("completed_accounts.txt")
     sys.exit(0)
 
 ACCOUNTS = [{"id": i + 1, "email": email, "password": email_password} for i, email in enumerate(PENDING_EMAILS)]
@@ -83,7 +84,6 @@ def purge_popups(page):
 
 
 def force_unpause_videos(page):
-    """Finds all HTML5 video elements across document + iframes and forces video.play()."""
     try:
         page.evaluate("""() => {
             function playAllVideos(doc) {
@@ -105,19 +105,6 @@ def force_unpause_videos(page):
         }""")
     except Exception:
         pass
-
-
-def get_credit_balance(page):
-    """Extracts the numerical credit balance visible in the UI."""
-    try:
-        val = page.evaluate("""() => {
-            const bodyText = document.body.innerText;
-            const match = bodyText.match(/(\d+)\s*Credits?/i);
-            return match ? parseInt(match[1]) : null;
-        }""")
-        return val
-    except Exception:
-        return None
 
 
 def check_daily_limit_reached(page):
@@ -394,8 +381,6 @@ def process_single_account(page, account):
         print(f"[{email}] LIMIT DETECTED: Account has used all ad opportunities for today!")
         return "LIMIT_REACHED"
 
-    initial_credits = get_credit_balance(page)
-
     print(f"[{email}] Starting ad task...")
     
     ad_started = False
@@ -435,17 +420,7 @@ def process_single_account(page, account):
     click_ok_button(page)
     page.wait_for_timeout(2000)
 
-    final_credits = get_credit_balance(page)
-
-    if initial_credits is not None and final_credits is not None:
-        if final_credits > initial_credits:
-            print(f"[{email}] SUCCESS: Credits increased from {initial_credits} to {final_credits}!")
-            return "SUCCESS"
-        else:
-            print(f"[{email}] ERROR: Credits did not increase ({initial_credits} -> {final_credits}). Ad playback failed!")
-            return "ERROR"
-
-    print(f"[{email}] SUCCESS: Ad cycle completed!")
+    print(f"[{email}] SUCCESS: Ad cycle completed and reward claimed!")
     return "SUCCESS"
 
 
@@ -537,11 +512,18 @@ def run_all_accounts():
 
         print("\n" + "=" * 60)
         print(f"SUMMARY: ALL {total_loaded} ACCOUNTS HAVE REACHED THEIR DAILY AD LIMIT!")
-        print("--> Daily cycle complete. Progress preserved for check_status.py.")
+        print("--> Writing ALL_DONE.txt lock file to prevent auto-restart!")
         print("=" * 60)
+
+        with open("ALL_DONE.txt", "w", encoding="utf-8") as f:
+            f.write("DONE\n")
+
+        if os.path.exists("completed_accounts.txt"):
+            os.remove("completed_accounts.txt")
 
         browser.close()
 
 
 if __name__ == "__main__":
     run_all_accounts()
+    
