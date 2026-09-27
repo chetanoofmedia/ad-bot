@@ -36,27 +36,23 @@ else:
 email_password = os.environ.get("ACCOUNT_PASSWORD", "Chetan@2026")
 ALL_EMAILS = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip()]
 
-# Load already completed accounts from file
 completed_set = set()
 if os.path.exists("completed_accounts.txt"):
     with open("completed_accounts.txt", "r", encoding="utf-8") as f:
         completed_set = {line.strip() for line in f if line.strip()}
     print(f"--> Found {len(completed_set)} previously completed accounts.")
 
-# AUTO-CLEAR CHECK: If all accounts were completed previously, clear list for a new day
+# AUTO-CLEAR CHECK: Reset on a fresh day start if all accounts completed previously
 if len(completed_set) >= len(ALL_EMAILS) and len(ALL_EMAILS) > 0:
-    print("--> [ALL COMPLETED DETECTED] Every account reached limit in the previous run. Clearing completed list for a fresh day!")
+    print("--> [ALL COMPLETED DETECTED] Every account reached limit in previous run. Resetting completed list for fresh run...")
     if os.path.exists("completed_accounts.txt"):
         os.remove("completed_accounts.txt")
     completed_set = set()
 
-# Filter out completed accounts so we only process pending ones
 PENDING_EMAILS = [e for e in ALL_EMAILS if e not in completed_set]
 
 if not PENDING_EMAILS:
     print("--> All accounts completed! Exiting...")
-    if os.path.exists("completed_accounts.txt"):
-        os.remove("completed_accounts.txt")
     sys.exit(0)
 
 ACCOUNTS = [{"id": i + 1, "email": email, "password": email_password} for i, email in enumerate(PENDING_EMAILS)]
@@ -86,6 +82,44 @@ def purge_popups(page):
         pass
 
 
+def force_unpause_videos(page):
+    """Finds all HTML5 video elements across document + iframes and forces video.play()."""
+    try:
+        page.evaluate("""() => {
+            function playAllVideos(doc) {
+                const videos = Array.from(doc.querySelectorAll('video'));
+                videos.forEach(v => {
+                    v.muted = true;
+                    v.play().catch(e => {});
+                });
+            }
+
+            playAllVideos(document);
+
+            const iframes = document.querySelectorAll('iframe');
+            iframes.forEach(f => {
+                try {
+                    if (f.contentDocument) playAllVideos(f.contentDocument);
+                } catch(e) {}
+            });
+        }""")
+    except Exception:
+        pass
+
+
+def get_credit_balance(page):
+    """Extracts the numerical credit balance visible in the UI."""
+    try:
+        val = page.evaluate("""() => {
+            const bodyText = document.body.innerText;
+            const match = bodyText.match(/(\d+)\s*Credits?/i);
+            return match ? parseInt(match[1]) : null;
+        }""")
+        return val
+    except Exception:
+        return None
+
+
 def check_daily_limit_reached(page):
     try:
         limit_text = "You have used all your ad watch opportunities for today"
@@ -102,6 +136,7 @@ def click_close_button(page):
     print("--> Waiting for 'Close' button to appear...")
 
     for attempt in range(15):
+        force_unpause_videos(page)
         page.wait_for_timeout(1000)
 
         for frame in page.frames:
@@ -303,7 +338,11 @@ def click_watch_ad(page):
             return false;
         }""")
 
-        return has_ad
+        if has_ad:
+            force_unpause_videos(page)
+            return True
+
+        return False
     except Exception as e:
         print(f"--> Error in click_watch_ad: {e}")
         return False
@@ -355,6 +394,8 @@ def process_single_account(page, account):
         print(f"[{email}] LIMIT DETECTED: Account has used all ad opportunities for today!")
         return "LIMIT_REACHED"
 
+    initial_credits = get_credit_balance(page)
+
     print(f"[{email}] Starting ad task...")
     
     ad_started = False
@@ -382,25 +423,29 @@ def process_single_account(page, account):
         return "LIMIT_REACHED"
 
     print(f"[{email}] Watching video ad (35s)...")
-    time.sleep(35)
+    for _ in range(7):
+        force_unpause_videos(page)
+        time.sleep(5)
 
     print(f"[{email}] Closing ad player...")
     page.wait_for_timeout(1000)
-    if click_close_button(page):
-        print(f"[{email}] Ad closed successfully.")
-    else:
-        print(f"[{email}] Warning: Close button click failed.")
+    click_close_button(page)
 
     page.wait_for_timeout(1000)
+    click_ok_button(page)
+    page.wait_for_timeout(2000)
 
-    print(f"[{email}] Claiming reward...")
-    if click_ok_button(page):
-        print(f"[{email}] SUCCESS: Reward claimed!")
-    else:
-        print(f"[{email}] Warning: OK button not found.")
+    final_credits = get_credit_balance(page)
 
-    page.wait_for_timeout(1000)
+    if initial_credits is not None and final_credits is not None:
+        if final_credits > initial_credits:
+            print(f"[{email}] SUCCESS: Credits increased from {initial_credits} to {final_credits}!")
+            return "SUCCESS"
+        else:
+            print(f"[{email}] ERROR: Credits did not increase ({initial_credits} -> {final_credits}). Ad playback failed!")
+            return "ERROR"
 
+    print(f"[{email}] SUCCESS: Ad cycle completed!")
     return "SUCCESS"
 
 
@@ -428,7 +473,8 @@ def run_all_accounts():
                 "--disable-dev-shm-usage",
                 "--disable-blink-features=AutomationControlled",
                 "--disable-infobars",
-                "--window-size=1920,1080"
+                "--window-size=1920,1080",
+                "--autoplay-policy=no-user-gesture-required"
             ]
         )
 
@@ -491,11 +537,8 @@ def run_all_accounts():
 
         print("\n" + "=" * 60)
         print(f"SUMMARY: ALL {total_loaded} ACCOUNTS HAVE REACHED THEIR DAILY AD LIMIT!")
-        print("--> Clearing completed_accounts.txt so the list is fresh for tomorrow!")
+        print("--> Daily cycle complete. Progress preserved for check_status.py.")
         print("=" * 60)
-        
-        if os.path.exists("completed_accounts.txt"):
-            os.remove("completed_accounts.txt")
 
         browser.close()
 
