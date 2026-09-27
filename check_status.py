@@ -11,7 +11,7 @@ headers = {
     "Accept": "application/vnd.github.v3+json"
 }
 
-# 1. Check if current workflow run was cancelled manually
+# 1. Check if the current workflow run was manually cancelled
 if repo and token and run_id:
     try:
         run_url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}"
@@ -37,7 +37,7 @@ with open("emails.txt", "r", encoding="utf-8") as f:
 all_emails = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip()]
 total_emails = len(all_emails)
 
-# 3. Read completed accounts count
+# 3. Read completed accounts count from file
 completed_count = 0
 if os.path.exists("completed_accounts.txt"):
     with open("completed_accounts.txt", "r", encoding="utf-8") as f:
@@ -45,7 +45,7 @@ if os.path.exists("completed_accounts.txt"):
 
 print(f"--> [CHECK STATUS] Total Accounts: {total_emails} | Completed: {completed_count}")
 
-# 4. Trigger next run ONLY if accounts are pending AND it was NOT cancelled
+# 4. Trigger next run ONLY if pending accounts remain AND it was NOT cancelled
 if total_emails > 0 and completed_count < total_emails:
     print("--> [CHECK STATUS] Pending accounts remain! Triggering next workflow run...")
     
@@ -59,5 +59,4 @@ if total_emails > 0 and completed_count < total_emails:
         else:
             print(f"--> [ERROR] Failed to trigger dispatch: {res.status_code} - {res.text}")
 else:
-    print("--> [CHECK STATUS] All accounts have reached their daily limit! Stopping loop completely.")
-    
+    print("--> [CHECK STATUS] ALL ACCOUNTS HAVE REACHED THEIR DAILY LIMIT! Stopping workflow loop permanently for today.")
