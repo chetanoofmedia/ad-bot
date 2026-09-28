@@ -63,12 +63,16 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add completed_accounts.txt ALL_DONE.txt || true
+          
+          # Check and add files safely without throwing fatal error
+          if [ -f completed_accounts.txt ]; then git add completed_accounts.txt; fi
+          if [ -f ALL_DONE.txt ]; then git add ALL_DONE.txt; fi
+          
           if git status --porcelain | grep -E "completed_accounts.txt|ALL_DONE.txt"; then
-            git commit -m "update: saved daily completion state"
+            git commit -m "update: saved completed accounts progress"
             git push origin HEAD:${{ github.ref_name }}
           else
-            echo "No status changes to commit."
+            echo "No progress state changes to commit."
           fi
 
       - name: Upload Execution Videos
@@ -80,7 +84,7 @@ jobs:
           retention-days: 7
 
       - name: Auto-Chain Next Run If Accounts Remaining
-        if: ${{ !cancelled() }}
+        if: ${{ always() && !cancelled() }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
