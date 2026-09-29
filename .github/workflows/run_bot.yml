@@ -8,7 +8,7 @@ permissions: write-all
 jobs:
   run-automation:
     runs-on: ubuntu-latest
-    timeout-minutes: 340 # Graceful cutoff at 5.6 hours
+    timeout-minutes: 340 # 5 hours 40 minutes limit
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -64,13 +64,15 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Check and add files safely without throwing fatal error
+          git fetch origin main || true
+          git rebase origin/main || true
+          
           if [ -f completed_accounts.txt ]; then git add completed_accounts.txt; fi
           if [ -f ALL_DONE.txt ]; then git add ALL_DONE.txt; fi
           
           if git status --porcelain | grep -E "completed_accounts.txt|ALL_DONE.txt"; then
             git commit -m "update: saved completed accounts progress"
-            git push origin HEAD:${{ github.ref_name }}
+            git push origin HEAD:main --force-with-lease || git push origin HEAD:main
           else
             echo "No progress state changes to commit."
           fi
@@ -83,11 +85,13 @@ jobs:
           path: videos/
           retention-days: 7
 
+      # RUN ALWAYS ON TIMEOUT (check_status.py checks for manual cancels vs normal timeouts)
       - name: Auto-Chain Next Run If Accounts Remaining
-        if: ${{ always() && !cancelled() }}
+        if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
         run: python check_status.py
+
         
