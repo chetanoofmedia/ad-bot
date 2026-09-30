@@ -479,6 +479,9 @@ def run_all_accounts():
     total_assigned = len(SHARD_ASSIGNED_EMAILS)
     remaining_pool = list(ACCOUNTS)
     active_batch = []
+    
+    # Dictionary to track last completed ad timestamp for each account
+    last_ad_completion_time = {}
 
     while remaining_pool and len(active_batch) < TARGET_BATCH_SIZE:
         active_batch.append(remaining_pool.pop(0))
@@ -512,18 +515,17 @@ def run_all_accounts():
                 print(f"   COMPLETED CYCLE {cycle_count - 1} | STARTING CYCLE {cycle_count} ({batch_len} ACTIVE ACCOUNTS)")
                 print("=" * 60)
 
-                if len(remaining_pool) == 0:
-                    if batch_len in (3, 4):
-                        print(f"--> [FULL CYCLE DELAY] Processed all {batch_len} accounts in batch. Pausing 1 minute before next cycle...")
-                        time.sleep(60)
-                    elif batch_len == 2:
-                        print(f"--> [FULL CYCLE DELAY] Processed all 2 accounts in batch. Pausing 2 minutes before next cycle...")
-                        time.sleep(120)
-                    elif batch_len == 1:
-                        print(f"--> [FULL CYCLE DELAY] Processed single account. Pausing 3 minutes before next cycle...")
-                        time.sleep(180)
-
             account = active_batch[current_idx]
+            email = account["email"]
+
+            # 3-MINUTE COOLDOWN CHECK PER ACCOUNT
+            COOLDOWN_SECONDS = 180 # 3 minutes
+            if email in last_ad_completion_time:
+                elapsed = time.time() - last_ad_completion_time[email]
+                if elapsed < COOLDOWN_SECONDS:
+                    wait_needed = int(COOLDOWN_SECONDS - elapsed) + 1
+                    print(f"--> [3-MIN COOLDOWN] Account {email} completed an ad {int(elapsed)}s ago. Pausing {wait_needed}s before next ad...")
+                    time.sleep(wait_needed)
 
             print("\n" + "-" * 50)
             print(f" [PROGRESS STATUS - SHARD {shard_index}/{total_shards}]")
@@ -531,7 +533,7 @@ def run_all_accounts():
             print(f"  • Currently Active Batch:    {len(active_batch)}")
             print(f"  • Waiting in Queue:          {len(remaining_pool)}")
             print("-" * 50)
-            print(f"[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {account['email']}")
+            print(f"[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {email}")
 
             context = browser.new_context(
                 viewport={"width": 1920, "height": 1080},
@@ -539,6 +541,6 @@ def run_all_accounts():
                 record_video_size={"width": 1920, "height": 1080},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             )
-            
+
             page = context.new_page()
-            page.add_init_script("Object.definePr
+            page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: 
