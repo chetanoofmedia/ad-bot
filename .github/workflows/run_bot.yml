@@ -5,7 +5,6 @@ on:
 
 permissions: write-all
 
-# CONCURRENCY CONTROL: Prevents multiple runs from stacking up
 concurrency:
   group: daily-ad-bot-matrix
   cancel-in-progress: false
