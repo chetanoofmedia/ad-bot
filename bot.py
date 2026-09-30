@@ -36,7 +36,7 @@ else:
 email_password = os.environ.get("ACCOUNT_PASSWORD", "Chetan@2026")
 ALL_EMAILS = [e.strip().lower() for e in raw_emails.replace(",", " ").split() if e.strip()]
 
-# If completed_accounts was cleared for a new run, clear ALL_DONE marker
+# Clear ALL_DONE marker on fresh runs if completed_accounts.txt was reset
 if os.path.exists("ALL_DONE.txt") and not os.path.exists("completed_accounts.txt"):
     os.remove("ALL_DONE.txt")
 
@@ -508,6 +508,23 @@ def run_all_accounts():
                     print(f"--> Pool empty. Active batch size reduced to {len(active_batch)}.")
             else:
                 current_idx += 1
+
+            # DYNAMIC WAIT DELAY BASED ON SMALLER BATCH SIZES WHEN QUEUE IS EMPTY
+            if len(remaining_pool) == 0 and len(active_batch) > 0:
+                current_size = len(active_batch)
+                wait_seconds = 0
+                
+                if current_size == 3:
+                    wait_seconds = 60
+                elif current_size == 2:
+                    wait_seconds = 120
+                elif current_size == 1:
+                    wait_seconds = 180
+
+                if wait_seconds > 0:
+                    print(f"--> [EMPTY QUEUE THROTTLING] Only {current_size} account(s) left in batch. Pausing for {wait_seconds // 60} min before next action...")
+                    time.sleep(wait_seconds)
+            else:
                 time.sleep(1)
 
         print("\n" + "=" * 60)
@@ -526,4 +543,3 @@ def run_all_accounts():
 
 if __name__ == "__main__":
     run_all_accounts()
-    
