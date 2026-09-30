@@ -284,12 +284,27 @@ def click_watch_ad(page):
     try:
         page.wait_for_timeout(2000)
 
-        btn = page.locator("div").filter(has_text="Watch ad to earn credits").get_by_text("Go Now").last
-        if btn.is_visible():
-            btn.scroll_into_view_if_needed()
-            page.wait_for_timeout(500)
-            btn.click(force=True)
+        # 1. Clear floating bottom overlays/popups
+        purge_popups(page)
 
+        # 2. Scope strictly to 'Watch ad to earn credits' card container
+        card = page.locator("div").filter(has_text="Watch ad to earn credits").last
+        if card.count() > 0:
+            card.scroll_into_view_if_needed()
+            page.wait_for_timeout(500)
+
+            go_btn = card.get_by_text("Go Now", exact=False).last
+            if go_btn.is_visible():
+                box = go_btn.bounding_box()
+                if box:
+                    # Move real mouse cursor directly over button center and click
+                    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+                    page.wait_for_timeout(300)
+                    page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+                else:
+                    go_btn.click(force=True)
+
+        # 3. DOM JS fallback targeting exact card element
         page.evaluate("""() => {
             const allElements = Array.from(document.querySelectorAll('*'));
             const watchAdTitle = allElements.find(el =>
@@ -307,11 +322,15 @@ def click_watch_ad(page):
             const goNowBtn = Array.from(card.querySelectorAll('*')).find(el =>
                 el.textContent.trim().toLowerCase().includes('go now')
             );
-            if (goNowBtn) goNowBtn.click();
+            if (goNowBtn) {
+                goNowBtn.focus();
+                goNowBtn.click();
+            }
         }""")
 
-        page.wait_for_timeout(3500)
+        page.wait_for_timeout(4000)
 
+        # 4. Check if Google Ad modal or video element opened
         has_ad = page.evaluate("""() => {
             const googleFullscreen = document.querySelector('[id*="goog_fullscreen"], [src*="googleads"], [id*="google_ads"]');
             const videoElement = document.querySelector('video');
@@ -326,6 +345,7 @@ def click_watch_ad(page):
         }""")
 
         if has_ad:
+            print("--> [SUCCESS] Ad modal launched! Triggering video playback...")
             force_unpause_videos(page)
             return True
 
@@ -454,15 +474,30 @@ def run_all_accounts():
         )
 
         while active_batch:
+            # CHECK IF FULL CYCLE FINISHED ACROSS ALL ACTIVE SLOTS
             if current_idx >= len(active_batch):
                 current_idx = 0
                 cycle_count += 1
+                batch_len = len(active_batch)
+
                 print("\n" + "=" * 60)
-                print(f"   STARTING CYCLE {cycle_count} ACROSS CURRENT {len(active_batch)} ACTIVE ACCOUNTS")
+                print(f"   COMPLETED CYCLE {cycle_count - 1} | STARTING CYCLE {cycle_count} ({batch_len} ACTIVE ACCOUNTS)")
                 print("=" * 60)
 
+                # CYCLE PAUSE: Only triggers once per full round when queue is empty
+                if len(remaining_pool) == 0:
+                    if batch_len in (3, 4):
+                        print(f"--> [FULL CYCLE DELAY] Processed all {batch_len} accounts in batch. Pausing 1 minute before next cycle...")
+                        time.sleep(60)
+                    elif batch_len == 2:
+                        print(f"--> [FULL CYCLE DELAY] Processed all 2 accounts in batch. Pausing 2 minutes before next cycle...")
+                        time.sleep(120)
+                    elif batch_len == 1:
+                        print(f"--> [FULL CYCLE DELAY] Processed single account. Pausing 3 minutes before next cycle...")
+                        time.sleep(180)
+
             account = active_batch[current_idx]
-            
+
             print("\n" + "-" * 50)
             print(f" [PROGRESS STATUS]")
             print(f"  • Total Accounts:            {total_loaded}")
@@ -526,4 +561,3 @@ def run_all_accounts():
 
 if __name__ == "__main__":
     run_all_accounts()
-    
