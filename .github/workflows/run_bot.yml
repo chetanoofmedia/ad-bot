@@ -108,8 +108,9 @@ jobs:
           path: videos/
           retention-days: 7
 
+      # SINGLE TRIGGER CONTROL: Only Shard 1 handles auto-chain checking to prevent queue loops
       - name: Auto-Chain Next Run If Accounts Remaining
-        if: always()
+        if: ${{ always() && matrix.shard == 1 }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
