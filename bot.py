@@ -1,4 +1,4 @@
-import os
+limport os
 import time
 import signal
 import sys
@@ -36,31 +36,40 @@ else:
 email_password = os.environ.get("ACCOUNT_PASSWORD", "Chetan@2026")
 ALL_EMAILS = [e.strip().lower() for e in raw_emails.replace(",", " ").split() if e.strip()]
 
-# If completed_accounts was cleared for a new run, clear ALL_DONE marker
-if os.path.exists("ALL_DONE.txt") and not os.path.exists("completed_accounts.txt"):
+shard_index = int(os.environ.get("SHARD_INDEX", "1"))
+total_shards = int(os.environ.get("TOTAL_SHARDS", "1"))
+shard_file = f"completed_accounts_shard_{shard_index}.txt"
+
+# Clear ALL_DONE lock if progress state was reset
+if os.path.exists("ALL_DONE.txt") and not any(os.path.exists(f"completed_accounts_shard_{i}.txt") for i in range(1, total_shards + 1)):
     os.remove("ALL_DONE.txt")
 
+# Combine all completed accounts across all shards
 completed_set = set()
+for s in range(1, total_shards + 1):
+    s_file = f"completed_accounts_shard_{s}.txt"
+    if os.path.exists(s_file):
+        with open(s_file, "r", encoding="utf-8") as f:
+            completed_set.update({line.strip().lower() for line in f if line.strip()})
+
 if os.path.exists("completed_accounts.txt"):
     with open("completed_accounts.txt", "r", encoding="utf-8") as f:
-        completed_set = {line.strip().lower() for line in f if line.strip()}
-    print(f"--> Found {len(completed_set)} previously completed accounts.")
+        completed_set.update({line.strip().lower() for line in f if line.strip()})
+
+print(f"--> [SHARD {shard_index}/{total_shards}] Found {len(completed_set)} total completed accounts across all shards.")
 
 # Filter out accounts already done today
 PENDING_EMAILS = [e for e in ALL_EMAILS if e not in completed_set]
 
-# DYNAMIC MATRIX SHARDING (Distributes ANY list size across parallel runners)
-shard_index = int(os.environ.get("SHARD_INDEX", "1"))
-total_shards = int(os.environ.get("TOTAL_SHARDS", "1"))
-
+# Distribute pending accounts evenly across shards
 SHARD_ASSIGNED_EMAILS = [
     email for idx, email in enumerate(PENDING_EMAILS)
     if idx % total_shards == (shard_index - 1)
 ]
 
-print(f"--> [MATRIX SHARD {shard_index}/{total_shards}] Total accounts in list: {len(ALL_EMAILS)}")
-print(f"--> [MATRIX SHARD {shard_index}/{total_shards}] Remaining total pending: {len(PENDING_EMAILS)}")
-print(f"--> [MATRIX SHARD {shard_index}/{total_shards}] Assigned to this runner: {len(SHARD_ASSIGNED_EMAILS)}")
+print(f"--> [SHARD {shard_index}/{total_shards}] Total list size: {len(ALL_EMAILS)}")
+print(f"--> [SHARD {shard_index}/{total_shards}] Remaining pending: {len(PENDING_EMAILS)}")
+print(f"--> [SHARD {shard_index}/{total_shards}] Assigned to this shard: {len(SHARD_ASSIGNED_EMAILS)}")
 
 if not SHARD_ASSIGNED_EMAILS:
     print(f"--> [SHARD {shard_index}] No pending accounts assigned to this worker. Exiting cleanly...")
@@ -475,7 +484,6 @@ def run_all_accounts():
     total_assigned = len(SHARD_ASSIGNED_EMAILS)
     remaining_pool = list(ACCOUNTS)
     active_batch = []
-    completed_accounts = list(completed_set)
 
     while remaining_pool and len(active_batch) < TARGET_BATCH_SIZE:
         active_batch.append(remaining_pool.pop(0))
@@ -536,4 +544,46 @@ def run_all_accounts():
                 viewport={"width": 1920, "height": 1080},
                 record_video_dir="videos/",
                 record_video_size={"width": 1920, "height": 1080},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Saf
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            )
+            
+            page = context.new_page()
+            page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            current_context = context
+
+            try:
+                status = process_single_account(page, account)
+            except Exception as e:
+                print(f"Error executing {account['email']}: {e}")
+                status = "ERROR"
+
+            context.close()
+            current_context = None
+
+            if status == "LIMIT_REACHED":
+                print(f"--> [REMOVING ACCOUNT] {account['email']} reached limit. Dropping from active batch.")
+                finished_acc = active_batch.pop(current_idx)
+
+                # Write to shard-specific progress file to avoid git conflicts
+                with open(shard_file, "a", encoding="utf-8") as f:
+                    f.write(f"{finished_acc['email']}\n")
+
+                if remaining_pool:
+                    new_acc = remaining_pool.pop(0)
+                    print(f"--> [ADDING NEW ACCOUNT] Pulled {new_acc['email']} into slot {current_idx + 1}.")
+                    active_batch.insert(current_idx, new_acc)
+                else:
+                    print(f"--> Pool empty. Active batch size reduced to {len(active_batch)}.")
+            else:
+                current_idx += 1
+                time.sleep(1)
+
+        print("\n" + "=" * 60)
+        print(f"SUMMARY: SHARD {shard_index}/{total_shards} HAS FINISHED ALL ASSIGNED ACCOUNTS!")
+        print("=" * 60)
+
+        browser.close()
+
+
+if __name__ == "__main__":
+    run_all_accounts()
