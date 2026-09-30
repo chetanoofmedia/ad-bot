@@ -449,7 +449,6 @@ def run_all_accounts():
     remaining_pool = list(ACCOUNTS)
     active_batch = []
     
-    # Track the last ad completion time per account for 3-minute cooldown
     last_ad_completion_time = {}
 
     while remaining_pool and len(active_batch) < TARGET_BATCH_SIZE:
@@ -485,7 +484,6 @@ def run_all_accounts():
             account = active_batch[current_idx]
             email = account["email"]
 
-            # 3-MINUTE COOLDOWN CHECK PER ACCOUNT
             COOLDOWN_SECONDS = 180
             if email in last_ad_completion_time:
                 elapsed = time.time() - last_ad_completion_time[email]
@@ -550,4 +548,5 @@ def run_all_accounts():
 
 
 if __name__ == "__main__":
-    run_all_acco
+    run_all_accounts()
+    
