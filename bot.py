@@ -1,4 +1,4 @@
-limport os
+import os
 import time
 import signal
 import sys
@@ -538,52 +538,4 @@ def run_all_accounts():
             print(f"  • Currently Active Batch:    {len(active_batch)}")
             print(f"  • Waiting in Queue:          {len(remaining_pool)}")
             print("-" * 50)
-            print(f"[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {account['email']}")
-
-            context = browser.new_context(
-                viewport={"width": 1920, "height": 1080},
-                record_video_dir="videos/",
-                record_video_size={"width": 1920, "height": 1080},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-            )
-            
-            page = context.new_page()
-            page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            current_context = context
-
-            try:
-                status = process_single_account(page, account)
-            except Exception as e:
-                print(f"Error executing {account['email']}: {e}")
-                status = "ERROR"
-
-            context.close()
-            current_context = None
-
-            if status == "LIMIT_REACHED":
-                print(f"--> [REMOVING ACCOUNT] {account['email']} reached limit. Dropping from active batch.")
-                finished_acc = active_batch.pop(current_idx)
-
-                # Write to shard-specific progress file to avoid git conflicts
-                with open(shard_file, "a", encoding="utf-8") as f:
-                    f.write(f"{finished_acc['email']}\n")
-
-                if remaining_pool:
-                    new_acc = remaining_pool.pop(0)
-                    print(f"--> [ADDING NEW ACCOUNT] Pulled {new_acc['email']} into slot {current_idx + 1}.")
-                    active_batch.insert(current_idx, new_acc)
-                else:
-                    print(f"--> Pool empty. Active batch size reduced to {len(active_batch)}.")
-            else:
-                current_idx += 1
-                time.sleep(1)
-
-        print("\n" + "=" * 60)
-        print(f"SUMMARY: SHARD {shard_index}/{total_shards} HAS FINISHED ALL ASSIGNED ACCOUNTS!")
-        print("=" * 60)
-
-        browser.close()
-
-
-if __name__ == "__main__":
-    run_all_accounts()
+            print(f"[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {account['email']}
