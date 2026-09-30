@@ -303,10 +303,8 @@ def click_watch_ad(page):
     try:
         page.wait_for_timeout(2000)
 
-        # 1. Clear floating bottom overlays/popups
         purge_popups(page)
 
-        # 2. Scope strictly to 'Watch ad to earn credits' card container
         card = page.locator("div").filter(has_text="Watch ad to earn credits").last
         if card.count() > 0:
             card.scroll_into_view_if_needed()
@@ -319,7 +317,6 @@ def click_watch_ad(page):
                     click_x = box["x"] + box["width"] / 2
                     click_y = box["y"] + box["height"] / 2
 
-                    # Multi-click retry strategy: Press down and release up cleanly
                     for c_attempt in range(3):
                         page.mouse.move(click_x, click_y)
                         page.wait_for_timeout(200)
@@ -336,7 +333,6 @@ def click_watch_ad(page):
                 else:
                     go_btn.click(force=True)
 
-        # 3. DOM JS Multi-Event Trigger fallback
         page.evaluate("""() => {
             const allElements = Array.from(document.querySelectorAll('*'));
             const watchAdTitle = allElements.find(el =>
@@ -365,7 +361,6 @@ def click_watch_ad(page):
 
         page.wait_for_timeout(4000)
 
-        # 4. Check if Google Ad modal or video element opened
         has_ad = page.evaluate("""() => {
             const googleFullscreen = document.querySelector('[id*="goog_fullscreen"], [src*="googleads"], [id*="google_ads"]');
             const videoElement = document.querySelector('video');
@@ -508,7 +503,6 @@ def run_all_accounts():
         )
 
         while active_batch:
-            # CHECK IF FULL CYCLE FINISHED ACROSS ALL ACTIVE SLOTS
             if current_idx >= len(active_batch):
                 current_idx = 0
                 cycle_count += 1
@@ -518,7 +512,6 @@ def run_all_accounts():
                 print(f"   COMPLETED CYCLE {cycle_count - 1} | STARTING CYCLE {cycle_count} ({batch_len} ACTIVE ACCOUNTS)")
                 print("=" * 60)
 
-                # CYCLE PAUSE: Only triggers once per full round when queue is empty
                 if len(remaining_pool) == 0:
                     if batch_len in (3, 4):
                         print(f"--> [FULL CYCLE DELAY] Processed all {batch_len} accounts in batch. Pausing 1 minute before next cycle...")
@@ -538,4 +531,14 @@ def run_all_accounts():
             print(f"  • Currently Active Batch:    {len(active_batch)}")
             print(f"  • Waiting in Queue:          {len(remaining_pool)}")
             print("-" * 50)
-            print(f"[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {account['email']}
+            print(f"[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {account['email']}")
+
+            context = browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                record_video_dir="videos/",
+                record_video_size={"width": 1920, "height": 1080},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            )
+            
+            page = context.new_page()
+            page.add_init_script("Object.definePr
