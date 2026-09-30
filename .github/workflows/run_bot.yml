@@ -11,10 +11,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Spawns 8 parallel GitHub runner machines
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
         total_shards: [8]
-    timeout-minutes: 340 # 5.6 hours execution limit
+    timeout-minutes: 340
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -70,24 +69,36 @@ jobs:
           TOTAL_SHARDS: ${{ matrix.total_shards }}
         run: python -u bot.py
 
-      - name: Commit Progress State
+      - name: Commit Shard Progress State
         if: always()
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          git fetch origin main || true
-          git rebase origin/main || true
-          
-          if [ -f completed_accounts.txt ]; then git add completed_accounts.txt; fi
-          if [ -f ALL_DONE.txt ]; then git add ALL_DONE.txt; fi
-          
-          if git status --porcelain | grep -E "completed_accounts.txt|ALL_DONE.txt"; then
-            git commit -m "update: saved progress for shard ${{ matrix.shard }}"
-            git push origin HEAD:main --force-with-lease || git push origin HEAD:main
-          else
-            echo "No progress state changes to commit."
-          fi
+          # Retry loop to push shard file safely without git lock collisions
+          for i in {1..5}; do
+            git fetch origin main || true
+            git rebase origin/main || true
+            
+            if [ -f completed_accounts_shard_${{ matrix.shard }}.txt ]; then 
+              git add completed_accounts_shard_${{ matrix.shard }}.txt
+            fi
+            if [ -f ALL_DONE.txt ]; then 
+              git add ALL_DONE.txt
+            fi
+            
+            if git status --porcelain | grep -E "completed_accounts_shard_|ALL_DONE.txt"; then
+              git commit -m "update: saved progress for shard ${{ matrix.shard }}"
+              if git push origin HEAD:main; then
+                echo "Successfully pushed shard progress!"
+                break
+              fi
+            else
+              echo "No progress state changes to commit."
+              break
+            fi
+            sleep $((RANDOM % 5 + 2))
+          done
 
       - name: Upload Execution Videos
         if: always()
@@ -103,5 +114,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
+          TOTAL_SHARDS: ${{ matrix.total_shards }}
         run: python check_status.py
         
