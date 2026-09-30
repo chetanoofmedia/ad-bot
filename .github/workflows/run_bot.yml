@@ -5,6 +5,11 @@ on:
 
 permissions: write-all
 
+# CONCURRENCY CONTROL: Prevents multiple runs from stacking up
+concurrency:
+  group: daily-ad-bot-matrix
+  cancel-in-progress: false
+
 jobs:
   run-automation:
     runs-on: ubuntu-latest
@@ -75,7 +80,6 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Retry loop to push shard file safely without git lock collisions
           for i in {1..5}; do
             git fetch origin main || true
             git rebase origin/main || true
@@ -108,8 +112,7 @@ jobs:
           path: videos/
           retention-days: 7
 
-      # SINGLE TRIGGER CONTROL: Only Shard 1 handles auto-chain checking to prevent queue loops
-      - name: Auto-Chain Next Run If Accounts Remaining
+      - name: Check Overall Status
         if: ${{ always() && matrix.shard == 1 }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
