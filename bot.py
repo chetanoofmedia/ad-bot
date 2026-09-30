@@ -297,14 +297,28 @@ def click_watch_ad(page):
             if go_btn.is_visible():
                 box = go_btn.bounding_box()
                 if box:
-                    # Move real mouse cursor directly over button center and click
-                    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-                    page.wait_for_timeout(300)
-                    page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+                    click_x = box["x"] + box["width"] / 2
+                    click_y = box["y"] + box["height"] / 2
+
+                    # Multi-click retry strategy: Ensure press down and release up cleanly
+                    for c_attempt in range(3):
+                        page.mouse.move(click_x, click_y)
+                        page.wait_for_timeout(200)
+                        page.mouse.down()
+                        page.wait_for_timeout(150)
+                        page.mouse.up()
+                        page.wait_for_timeout(500)
+
+                        # Verify if ad triggered early
+                        ad_opened = page.evaluate("""() => {
+                            return !!(document.querySelector('[id*="goog_fullscreen"], [src*="googleads"], video'));
+                        }""")
+                        if ad_opened:
+                            break
                 else:
                     go_btn.click(force=True)
 
-        # 3. DOM JS fallback targeting exact card element
+        # 3. DOM JS Multi-Event Trigger fallback
         page.evaluate("""() => {
             const allElements = Array.from(document.querySelectorAll('*'));
             const watchAdTitle = allElements.find(el =>
@@ -324,6 +338,9 @@ def click_watch_ad(page):
             );
             if (goNowBtn) {
                 goNowBtn.focus();
+                goNowBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                goNowBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                goNowBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
                 goNowBtn.click();
             }
         }""")
