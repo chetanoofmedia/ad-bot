@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import subprocess
 import requests
 
@@ -76,14 +77,15 @@ print(f"--> [CHECK STATUS] Pending Accounts:      {pending_count}")
 
 # 6. Trigger next run ONLY if accounts remain
 if total_emails > 0 and completed_count < total_emails:
-    print(f"--> [CHECK STATUS] {pending_count} accounts remaining! Triggering next workflow run...")
+    print(f"--> [CHECK STATUS] {pending_count} accounts remaining! Pausing 10s to let other matrix shards complete before dispatching...")
+    time.sleep(10)
     
     if repo and token:
         dispatch_url = f"https://api.github.com/repos/{repo}/actions/workflows/run_bot.yml/dispatches"
         res = requests.post(dispatch_url, headers=headers, json={"ref": "main"})
         
         if res.status_code == 204:
-            print("--> [SUCCESS] Dispatch request sent! Next workflow run triggered successfully.")
+            print("--> [SUCCESS] Single dispatch request sent! Next parallel workflow run triggered successfully.")
         else:
             print(f"--> [ERROR] Failed to trigger dispatch: {res.status_code} - {res.text}")
     else:
@@ -99,4 +101,3 @@ else:
         subprocess.run(["git", "push", "origin", "HEAD:main"], check=False)
     except Exception as e:
         print(f"--> Error pushing ALL_DONE.txt: {e}")
-        
