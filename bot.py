@@ -36,7 +36,7 @@ else:
 email_password = os.environ.get("ACCOUNT_PASSWORD", "Chetan@2026")
 ALL_EMAILS = [e.strip().lower() for e in raw_emails.replace(",", " ").split() if e.strip()]
 
-# Clear ALL_DONE marker on fresh runs if completed_accounts.txt was reset
+# If completed_accounts was cleared for a new run, clear ALL_DONE marker
 if os.path.exists("ALL_DONE.txt") and not os.path.exists("completed_accounts.txt"):
     os.remove("ALL_DONE.txt")
 
@@ -454,15 +454,30 @@ def run_all_accounts():
         )
 
         while active_batch:
+            # 1. CHECK IF A FULL CYCLE ACROSS ALL ACTIVE SLOTS FINISHED
             if current_idx >= len(active_batch):
                 current_idx = 0
                 cycle_count += 1
+                batch_len = len(active_batch)
+
                 print("\n" + "=" * 60)
-                print(f"   STARTING CYCLE {cycle_count} ACROSS CURRENT {len(active_batch)} ACTIVE ACCOUNTS")
+                print(f"   COMPLETED CYCLE {cycle_count - 1} | STARTING CYCLE {cycle_count} ({batch_len} ACTIVE ACCOUNTS)")
                 print("=" * 60)
 
+                # 2. PAUSE HERE ONLY (ONCE PER FULL CYCLE) WHEN QUEUE IS EMPTY
+                if len(remaining_pool) == 0:
+                    if batch_len in (3, 4):
+                        print(f"--> [FULL CYCLE DELAY] Processed all {batch_len} accounts in batch. Pausing 1 minute before next cycle...")
+                        time.sleep(60)
+                    elif batch_len == 2:
+                        print(f"--> [FULL CYCLE DELAY] Processed all 2 accounts in batch. Pausing 2 minutes before next cycle...")
+                        time.sleep(120)
+                    elif batch_len == 1:
+                        print(f"--> [FULL CYCLE DELAY] Processed single account. Pausing 3 minutes before next cycle...")
+                        time.sleep(180)
+
             account = active_batch[current_idx]
-            
+
             print("\n" + "-" * 50)
             print(f" [PROGRESS STATUS]")
             print(f"  • Total Accounts:            {total_loaded}")
@@ -508,24 +523,7 @@ def run_all_accounts():
                     print(f"--> Pool empty. Active batch size reduced to {len(active_batch)}.")
             else:
                 current_idx += 1
-
-            # DYNAMIC WAIT DELAY BASED ON SMALLER BATCH SIZES WHEN QUEUE IS EMPTY
-            if len(remaining_pool) == 0 and len(active_batch) > 0:
-                current_size = len(active_batch)
-                wait_seconds = 0
-                
-                if current_size == 3:
-                    wait_seconds = 60
-                elif current_size == 2:
-                    wait_seconds = 120
-                elif current_size == 1:
-                    wait_seconds = 180
-
-                if wait_seconds > 0:
-                    print(f"--> [EMPTY QUEUE THROTTLING] Only {current_size} account(s) left in batch. Pausing for {wait_seconds // 60} min before next action...")
-                    time.sleep(wait_seconds)
-            else:
-                time.sleep(1)
+                time.sleep(1) # Standard 1-second pause between individual accounts
 
         print("\n" + "=" * 60)
         print(f"SUMMARY: ALL {total_loaded} ACCOUNTS HAVE REACHED THEIR DAILY AD LIMIT!")
