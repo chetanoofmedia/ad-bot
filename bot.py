@@ -38,45 +38,21 @@ ALL_EMAILS = [e.strip().lower() for e in raw_emails.replace(",", " ").split() if
 
 shard_index = int(os.environ.get("SHARD_INDEX", "1"))
 total_shards = int(os.environ.get("TOTAL_SHARDS", "1"))
-shard_file = f"completed_accounts_shard_{shard_index}.txt"
 
-# Clear ALL_DONE lock if progress state was reset
-if os.path.exists("ALL_DONE.txt") and not any(os.path.exists(f"completed_accounts_shard_{i}.txt") for i in range(1, total_shards + 1)):
-    os.remove("ALL_DONE.txt")
-
-# Combine all completed accounts across all shards
-completed_set = set()
-for s in range(1, total_shards + 1):
-    s_file = f"completed_accounts_shard_{s}.txt"
-    if os.path.exists(s_file):
-        with open(s_file, "r", encoding="utf-8") as f:
-            completed_set.update({line.strip().lower() for line in f if line.strip()})
-
-if os.path.exists("completed_accounts.txt"):
-    with open("completed_accounts.txt", "r", encoding="utf-8") as f:
-        completed_set.update({line.strip().lower() for line in f if line.strip()})
-
-print(f"--> [SHARD {shard_index}/{total_shards}] Found {len(completed_set)} total completed accounts across all shards.")
-
-# Filter out accounts already done today
-PENDING_EMAILS = [e for e in ALL_EMAILS if e not in completed_set]
-
-# Distribute pending accounts evenly across shards
+# Distribute accounts evenly across shards without checking past completion history
 SHARD_ASSIGNED_EMAILS = [
-    email for idx, email in enumerate(PENDING_EMAILS)
+    email for idx, email in enumerate(ALL_EMAILS)
     if idx % total_shards == (shard_index - 1)
 ]
 
 print(f"--> [SHARD {shard_index}/{total_shards}] Total list size: {len(ALL_EMAILS)}")
-print(f"--> [SHARD {shard_index}/{total_shards}] Remaining pending: {len(PENDING_EMAILS)}")
 print(f"--> [SHARD {shard_index}/{total_shards}] Assigned to this shard: {len(SHARD_ASSIGNED_EMAILS)}")
 
 if not SHARD_ASSIGNED_EMAILS:
-    print(f"--> [SHARD {shard_index}] No pending accounts assigned to this worker. Exiting cleanly...")
+    print(f"--> [SHARD {shard_index}] No accounts assigned to this worker. Exiting cleanly...")
     sys.exit(0)
 
 ACCOUNTS = [{"id": i + 1, "email": email, "password": email_password} for i, email in enumerate(SHARD_ASSIGNED_EMAILS)]
-TARGET_BATCH_SIZE = 5
 
 
 def purge_popups(page):
@@ -445,17 +421,7 @@ def process_single_account(page, account):
 
 def run_all_accounts():
     global current_context
-    total_assigned = len(SHARD_ASSIGNED_EMAILS)
-    remaining_pool = list(ACCOUNTS)
-    active_batch = []
-    
-    last_ad_completion_time = {}
-
-    while remaining_pool and len(active_batch) < TARGET_BATCH_SIZE:
-        active_batch.append(remaining_pool.pop(0))
-
-    cycle_count = 1
-    current_idx = 0
+    total_assigned = len(ACCOUNTS)
 
     os.makedirs("videos", exist_ok=True)
 
@@ -473,32 +439,13 @@ def run_all_accounts():
             ]
         )
 
-        while active_batch:
-            if current_idx >= len(active_batch):
-                current_idx = 0
-                cycle_count += 1
-                print("\n" + "=" * 60)
-                print(f"   STARTING CYCLE {cycle_count} ACROSS CURRENT {len(active_batch)} ACTIVE ACCOUNTS")
-                print("=" * 60)
-
-            account = active_batch[current_idx]
+        for idx, account in enumerate(ACCOUNTS):
             email = account["email"]
-
-            COOLDOWN_SECONDS = 180
-            if email in last_ad_completion_time:
-                elapsed = time.time() - last_ad_completion_time[email]
-                if elapsed < COOLDOWN_SECONDS:
-                    wait_needed = int(COOLDOWN_SECONDS - elapsed) + 1
-                    print(f"--> [3-MIN COOLDOWN] Account {email} completed an ad {int(elapsed)}s ago. Pausing {wait_needed}s before next ad...")
-                    time.sleep(wait_needed)
 
             print("\n" + "-" * 50)
             print(f" [PROGRESS STATUS - SHARD {shard_index}/{total_shards}]")
-            print(f"  • Assigned To This Runner:   {total_assigned}")
-            print(f"  • Currently Active Batch:    {len(active_batch)}")
-            print(f"  • Waiting in Queue:          {len(remaining_pool)}")
+            print(f"  • Processing Account {idx + 1}/{total_assigned}: {email}")
             print("-" * 50)
-            print(f"[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {email}")
 
             context = browser.new_context(
                 viewport={"width": 1920, "height": 1080},
@@ -512,36 +459,15 @@ def run_all_accounts():
             current_context = context
 
             try:
-                status = process_single_account(page, account)
+                process_single_account(page, account)
             except Exception as e:
                 print(f"Error executing {email}: {e}")
-                status = "ERROR"
 
             context.close()
             current_context = None
 
-            if status == "SUCCESS":
-                last_ad_completion_time[email] = time.time()
-                current_idx += 1
-            elif status == "LIMIT_REACHED":
-                print(f"--> [REMOVING ACCOUNT] {email} reached limit. Dropping from active batch.")
-                finished_acc = active_batch.pop(current_idx)
-
-                with open(shard_file, "a", encoding="utf-8") as f:
-                    f.write(f"{finished_acc['email']}\n")
-
-                if remaining_pool:
-                    new_acc = remaining_pool.pop(0)
-                    print(f"--> [ADDING NEW ACCOUNT] Pulled {new_acc['email']} into slot {current_idx + 1}.")
-                    active_batch.insert(current_idx, new_acc)
-                else:
-                    print(f"--> Pool empty. Active batch size reduced to {len(active_batch)}.")
-            else:
-                current_idx += 1
-                time.sleep(1)
-
         print("\n" + "=" * 60)
-        print(f"SUMMARY: SHARD {shard_index}/{total_shards} HAS FINISHED ALL ASSIGNED ACCOUNTS!")
+        print(f"SUMMARY: SHARD {shard_index}/{total_shards} FINISHED EXECUTING ALL ASSIGNED ACCOUNTS!")
         print("=" * 60)
 
         browser.close()
@@ -549,4 +475,3 @@ def run_all_accounts():
 
 if __name__ == "__main__":
     run_all_accounts()
-    
