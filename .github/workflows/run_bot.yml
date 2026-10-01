@@ -15,8 +15,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
-        total_shards: [8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        total_shards: [16]
     timeout-minutes: 340
     steps:
       - name: Checkout Repository
@@ -119,4 +119,3 @@ jobs:
           GITHUB_RUN_ID: ${{ github.run_id }}
           TOTAL_SHARDS: ${{ matrix.total_shards }}
         run: python check_status.py
-        
